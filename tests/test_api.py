@@ -129,6 +129,10 @@ def test_ui_and_api_endpoints():
     assert "Dummy MWRA March 2026 Recipe" in beerxml.text
     assert "<BREWER" in beerxml.text
     assert "<CALCIUM>4.37</CALCIUM>" in beerxml.text
+    assert "<HOPS" in beerxml.text
+    assert "<MISCS" in beerxml.text
+    assert "<YEASTS" in beerxml.text
+    assert "<TYPE>Ale</TYPE>" in beerxml.text
     assert missing.status_code == 404
     assert api.status_code == 200
     assert api.json()["brewfather_values"]["pH"] == 9.7

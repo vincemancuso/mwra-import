@@ -38,6 +38,7 @@ sparge, and total water blocks with the selected MWRA profile.
 
 The BeerXML download is generated from that same in-memory temporary recipe,
 uses an empty `BREWER`, and includes a standard BeerXML `WATERS/WATER` block.
+It follows the BeerXML 1.0 required recipe record sets and data types.
 
 ## Conversion rules
 

@@ -62,6 +62,7 @@ def test_builds_blank_attribution_recipe_with_selected_water_profile():
     assert recipe["searchTags"] == []
     assert recipe["water"]["mashPh"] is None
     assert recipe["water"]["mashPhDistilled"] is None
+    assert recipe["style"]["type"] == "Ale"
     assert brewfather_filename(profile) == (
         "Brewfather_RECIPE_Dummy_MWRA_April_2026_Recipe.json"
     )
@@ -89,6 +90,10 @@ def test_builds_blank_attribution_recipe_with_selected_water_profile():
     assert xml_recipe.findtext("BREWER") in (None, "")
     assert xml_recipe.findtext("BATCH_SIZE") == str(recipe["batchSize"])
     assert xml_recipe.findtext("EQUIPMENT/NAME") == recipe["equipment"]["name"]
+    assert xml_recipe.findtext("STYLE/TYPE") == "Ale"
+    assert xml_recipe.find("HOPS") is not None
+    assert xml_recipe.find("MISCS") is not None
+    assert xml_recipe.find("YEASTS") is not None
 
     water = xml_recipe.find("WATERS/WATER")
     assert water is not None
@@ -100,6 +105,14 @@ def test_builds_blank_attribution_recipe_with_selected_water_profile():
     assert float(water.findtext("SULFATE")) == source["sulfate"]
     assert float(water.findtext("BICARBONATE")) == source["bicarbonate"]
     assert float(water.findtext("PH")) == source["ph"]
+    assert water.find("ALKALINITY") is None
+    assert xml_recipe.findtext("EQUIPMENT/CALC_BOIL_VOLUME") == "TRUE"
+    assert (
+        xml_recipe.findtext("FERMENTABLES/FERMENTABLE/ADD_AFTER_BOIL")
+        == "FALSE"
+    )
+    assert xml_recipe.find(".//BF_ID") is None
+    assert xml_recipe.find(".//NOT_FERMENTABLE") is None
 
     assert beerxml_filename(profile) == (
         "Brewfather_BeerXML_Dummy_MWRA_April_2026_Recipe.xml"

@@ -95,6 +95,22 @@ def build_brewfather_recipe(profile: WaterProfileResponse) -> dict:
     recipe["author"] = ""
     recipe["tags"] = None
     recipe["searchTags"] = []
+    recipe["style"] = {
+        "name": "Unspecified Ale",
+        "category": "Unspecified",
+        "categoryNumber": "0",
+        "styleLetter": "A",
+        "styleGuide": "None",
+        "type": "Ale",
+        "ogMin": 1.0,
+        "ogMax": 1.2,
+        "fgMin": 0.99,
+        "fgMax": 1.1,
+        "ibuMin": 0,
+        "ibuMax": 200,
+        "colorMin": 0,
+        "colorMax": 100,
+    }
     recipe_id = uuid.uuid5(
         uuid.NAMESPACE_URL,
         f"mwra-recipe-{profile.report.report_year}-{profile.report.report_month_number}",
@@ -130,7 +146,7 @@ def _text(parent: ET.Element, tag: str, value: object | None = None) -> ET.Eleme
 
 
 def _bool(value: object) -> str:
-    return "true" if value else "false"
+    return "TRUE" if value else "FALSE"
 
 
 def build_beerxml(recipe: dict) -> bytes:
@@ -142,24 +158,22 @@ def build_beerxml(recipe: dict) -> bytes:
     _text(xml_recipe, "NOTES")
 
     style = ET.SubElement(xml_recipe, "STYLE")
-    _text(style, "NAME", recipe["style"].get("name"))
-    _text(style, "CATEGORY")
+    style_data = recipe["style"]
+    _text(style, "NAME", style_data["name"])
+    _text(style, "CATEGORY", style_data["category"])
     _text(style, "VERSION", 1)
-    _text(style, "CATEGORY_NUMBER")
-    _text(style, "STYLE_LETTER")
-    _text(style, "STYLE_GUIDE")
-    _text(style, "TYPE", recipe["type"])
-    for tag in (
-        "OG_MIN",
-        "OG_MAX",
-        "FG_MIN",
-        "FG_MAX",
-        "IBU_MIN",
-        "IBU_MAX",
-        "COLOR_MIN",
-        "COLOR_MAX",
-    ):
-        _text(style, tag)
+    _text(style, "CATEGORY_NUMBER", style_data["categoryNumber"])
+    _text(style, "STYLE_LETTER", style_data["styleLetter"])
+    _text(style, "STYLE_GUIDE", style_data["styleGuide"])
+    _text(style, "TYPE", style_data["type"])
+    _text(style, "OG_MIN", style_data["ogMin"])
+    _text(style, "OG_MAX", style_data["ogMax"])
+    _text(style, "FG_MIN", style_data["fgMin"])
+    _text(style, "FG_MAX", style_data["fgMax"])
+    _text(style, "IBU_MIN", style_data["ibuMin"])
+    _text(style, "IBU_MAX", style_data["ibuMax"])
+    _text(style, "COLOR_MIN", style_data["colorMin"])
+    _text(style, "COLOR_MAX", style_data["colorMax"])
 
     # Brewfather's BREWER field corresponds to the JSON author. Keep both blank.
     _text(xml_recipe, "BREWER", recipe["author"])
@@ -169,29 +183,27 @@ def build_beerxml(recipe: dict) -> bytes:
     _text(xml_recipe, "EFFICIENCY", recipe["efficiency"])
     _text(xml_recipe, "OG", round(recipe["og"], 3))
     _text(xml_recipe, "FG", recipe["fg"])
-    _text(xml_recipe, "ABV", f'{recipe["abv"]} %')
-    _text(xml_recipe, "EST_ABV", f'{recipe["abv"]} %')
-    _text(xml_recipe, "IBU", recipe["ibu"])
-    _text(xml_recipe, "EST_OG", f'{round(recipe["og"], 3)} SG')
-    _text(xml_recipe, "EST_FG", f'{recipe["fg"]} SG')
-    _text(xml_recipe, "EST_COLOR", f'{recipe["color"]} SRM')
     _text(xml_recipe, "CARBONATION", recipe["carbonation"])
 
+    # These record sets are required by BeerXML even when they contain no
+    # ingredient records.
+    ET.SubElement(xml_recipe, "HOPS")
     fermentables = ET.SubElement(xml_recipe, "FERMENTABLES")
     for item in recipe["fermentables"]:
         fermentable = ET.SubElement(fermentables, "FERMENTABLE")
-        _text(fermentable, "BF_ID", item.get("_id"))
         _text(fermentable, "NAME", item["name"])
-        _text(fermentable, "SUPPLIER", item.get("supplier"))
-        _text(fermentable, "ORIGIN", item.get("origin"))
         _text(fermentable, "VERSION", 1)
         _text(fermentable, "TYPE", item["type"])
         _text(fermentable, "AMOUNT", item["amount"])
         _text(fermentable, "YIELD", item["potentialPercentage"])
         _text(fermentable, "COLOR", item["color"])
-        _text(fermentable, "ADD_AFTER_BOIL", "false")
-        _text(fermentable, "NOT_FERMENTABLE", _bool(item["notFermentable"]))
+        _text(fermentable, "ADD_AFTER_BOIL", "FALSE")
+        _text(fermentable, "ORIGIN", item.get("origin"))
+        _text(fermentable, "SUPPLIER", item.get("supplier"))
         _text(fermentable, "IBU_GAL_PER_LB", item.get("ibuPerAmount") or 0)
+
+    ET.SubElement(xml_recipe, "MISCS")
+    ET.SubElement(xml_recipe, "YEASTS")
 
     # BeerXML supports water profiles even though the supplied Brewfather
     # BeerXML example omitted them. Include one source profile so the export
@@ -203,17 +215,15 @@ def build_beerxml(recipe: dict) -> bytes:
     _text(water, "VERSION", 1)
     _text(water, "AMOUNT", recipe["data"]["totalWaterAmount"])
     _text(water, "CALCIUM", source["calcium"])
-    _text(water, "BICARBONATE", source["bicarbonate"])
+    _text(water, "MAGNESIUM", source["magnesium"])
+    _text(water, "SODIUM", source["sodium"])
     _text(water, "SULFATE", source["sulfate"])
     _text(water, "CHLORIDE", source["chloride"])
-    _text(water, "SODIUM", source["sodium"])
-    _text(water, "MAGNESIUM", source["magnesium"])
+    _text(water, "BICARBONATE", source["bicarbonate"])
     _text(water, "PH", source["ph"])
-    _text(water, "ALKALINITY", source["alkalinity"])
     _text(water, "NOTES")
 
     mash = ET.SubElement(xml_recipe, "MASH")
-    _text(mash, "BF_ID")
     _text(mash, "NAME", recipe["mash"]["name"])
     _text(mash, "VERSION", 1)
     _text(mash, "GRAIN_TEMP", 20)
@@ -242,8 +252,6 @@ def build_beerxml(recipe: dict) -> bytes:
 
     fermentation = recipe["fermentation"]
     primary = fermentation["steps"][0]
-    _text(xml_recipe, "BF_FERMENTATION_PROFILE_ID")
-    _text(xml_recipe, "BF_FERMENTATION_PROFILE_NAME", fermentation["name"])
     _text(xml_recipe, "FERMENTATION_STAGES", len(fermentation["steps"]))
     _text(xml_recipe, "PRIMARY_AGE", primary["stepTime"])
     _text(xml_recipe, "PRIMARY_TEMP", primary["stepTemp"])
