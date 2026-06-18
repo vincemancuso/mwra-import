@@ -88,8 +88,10 @@ function renderProfile(profile) {
     .join("");
 
   const pdfUrl = `/api/reports/${profile.report.report_year}/${profile.report.report_month_number}/pdf`;
+  const brewfatherUrl = `/api/reports/${profile.report.report_year}/${profile.report.report_month_number}/brewfather.json`;
   const pdfLink = document.querySelector("#pdf-link");
   const pdfFrame = document.querySelector("#pdf-frame");
+  document.querySelector("#brewfather-download").href = brewfatherUrl;
   pdfLink.href = pdfUrl;
   pdfFrame.dataset.src = pdfUrl;
   if (pdfFrame.closest("details").open) {

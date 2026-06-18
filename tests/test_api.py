@@ -97,6 +97,7 @@ def test_ui_and_api_endpoints():
         reports = client.get("/api/reports")
         selected = client.get("/api/reports/2026/3")
         selected_pdf = client.get("/api/reports/2026/3/pdf")
+        brewfather = client.get("/api/reports/2026/3/brewfather.json")
         missing = client.get("/api/reports/2025/12")
         api = client.get("/api/latest")
         pdf = client.get("/api/latest/pdf")
@@ -110,6 +111,17 @@ def test_ui_and_api_endpoints():
     assert selected.status_code == 200
     assert selected.json()["report"]["report_month"] == "March"
     assert selected_pdf.status_code == 200
+    assert brewfather.status_code == 200
+    assert "attachment" in brewfather.headers["content-disposition"]
+    recipe = brewfather.json()
+    assert recipe["name"] == "Dummy MWRA March 2026 Recipe"
+    assert recipe["author"] == ""
+    assert recipe["tags"] is None
+    assert recipe["searchTags"] == []
+    for water_key in ("source", "mash", "sparge", "total"):
+        assert recipe["water"][water_key]["calcium"] == 4.37
+        assert recipe["water"][water_key]["bicarbonate"] == 49.17
+        assert recipe["water"][water_key]["ph"] == 9.7
     assert missing.status_code == 404
     assert api.status_code == 200
     assert api.json()["brewfather_values"]["pH"] == 9.7

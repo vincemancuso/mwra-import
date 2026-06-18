@@ -23,11 +23,17 @@ results for manual entry into Brewfather.
 - Converts MWRA units into Brewfather-friendly values.
 - Displays calcium, magnesium, sodium, chloride, sulfate, bicarbonate, and pH.
 - Copies a ready-to-paste text profile to the clipboard.
+- Generates a Brewfather recipe JSON using the selected month's water profile.
 - Shows the raw MWRA measurements and conversion formulas.
 - Embeds the original cached PDF for easy verification.
 
 It does **not** connect to the Brewfather API, modify a Brewfather account, or
 create reusable profiles in Brewfather.
+
+The Brewfather download is based on a blank recipe export supplied during
+development. It names the recipe `Dummy MWRA <Month YYYY> Recipe`, leaves
+`author` blank, leaves `tags` unset, and fills the recipe's source, mash,
+sparge, and total water blocks with the selected MWRA profile.
 
 ## Conversion rules
 
@@ -164,6 +170,7 @@ The browser interface uses two local endpoints:
 | `GET /api/reports` | List all linked reports and identify the latest one |
 | `GET /api/reports/{year}/{month}` | Return one selected report profile |
 | `GET /api/reports/{year}/{month}/pdf` | Stream one selected cached report PDF |
+| `GET /api/reports/{year}/{month}/brewfather.json` | Download a Brewfather recipe containing the selected water profile |
 | `GET /api/latest` | Return report metadata, raw measurements, conversions, and display values |
 | `GET /api/latest/pdf` | Stream the cached MWRA source PDF |
 
@@ -211,6 +218,8 @@ from `data/reports/`. The next request will download it again.
 - Values are snapshots from MWRA's monthly report and may not represent water
   at a particular home, date, or tap.
 - The app is intended for local personal use, not unattended public hosting.
+- Brewfather's recipe JSON format may evolve. The generated recipe is based on
+  the supplied blank export schema and should be checked after import.
 
 When required values cannot be extracted, the app returns a descriptive error
 instead of silently inventing or substituting values.

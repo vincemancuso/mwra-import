@@ -5,6 +5,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from app.brewfather import brewfather_filename, build_brewfather_recipe
 from app.config import APP_NAME, STATIC_DIR, TEMPLATES_DIR
 from app.errors import ReportNotFoundError, WaterProfileError
 from app.service import WaterProfileService
@@ -78,6 +79,20 @@ async def report_pdf(request: Request, year: int, month: int):
         media_type="application/pdf",
         filename=pdf_path.name,
         content_disposition_type="inline",
+    )
+
+
+@app.get("/api/reports/{year}/{month}/brewfather.json")
+async def brewfather_recipe(request: Request, year: int, month: int):
+    profile, _ = await service(request).profile(year, month)
+    return JSONResponse(
+        content=build_brewfather_recipe(profile),
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{brewfather_filename(profile)}"'
+            )
+        },
+        media_type="application/json",
     )
 
 
