@@ -1,0 +1,72 @@
+from datetime import date, datetime
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class ReportLink(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    month: int = Field(ge=1, le=12)
+    year: int = Field(ge=2000)
+    label: str
+    url: str
+
+    @property
+    def report_date(self) -> date:
+        return date(self.year, self.month, 1)
+
+    @property
+    def month_year(self) -> str:
+        return self.report_date.strftime("%B %Y")
+
+    @property
+    def cache_filename(self) -> str:
+        return f"mwra-water-quality-{self.year:04d}-{self.month:02d}.pdf"
+
+
+class RawMeasurement(BaseModel):
+    parameter: str
+    value: float
+    unit: str
+    source_label: str
+
+
+class Conversion(BaseModel):
+    field: str
+    source_parameter: str
+    source_value: float
+    source_unit: str
+    formula: str
+    result: float
+    result_unit: str
+
+
+class BrewfatherValues(BaseModel):
+    calcium: float
+    magnesium: float
+    sodium: float
+    chloride: float
+    sulfate: float
+    bicarbonate: float
+    ph: float = Field(alias="pH")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ReportMetadata(BaseModel):
+    report_month: str
+    report_year: int
+    report_label: str
+    source_page_url: str
+    source_pdf_url: str
+    selected_column: str
+    cached_filename: str
+    fetched_at: datetime
+
+
+class WaterProfileResponse(BaseModel):
+    name: str
+    report: ReportMetadata
+    raw_values: dict[str, RawMeasurement]
+    conversions: list[Conversion]
+    brewfather_values: BrewfatherValues

@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ app_name }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}">
+    <script src="{{ url_for('static', path='/app.js') }}" defer></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 48 48" role="img">
+          <path d="M24 4C16 16 9 23 9 32a15 15 0 0 0 30 0C39 23 32 16 24 4Z"/>
+          <path class="wave" d="M13 33c5-3 9 3 14 0s8-2 10 0"/>
+        </svg>
+      </div>
+      <div>
+        <p class="eyebrow">Local brewing utility</p>
+        <h1>MWRA Brewfather Water Profile</h1>
+      </div>
+    </header>
+
+    <main>
+      <section id="loading-card" class="card status-card" aria-live="polite">
+        <div class="spinner" aria-hidden="true"></div>
+        <div>
+          <h2>Fetching the latest MWRA report</h2>
+          <p>This can take a moment the first time while the PDF is cached locally.</p>
+        </div>
+      </section>
+
+      <section id="error-card" class="card error-card" hidden aria-live="assertive">
+        <p class="eyebrow">Couldn’t build the profile</p>
+        <h2 id="error-title">The latest report could not be loaded.</h2>
+        <p id="error-message"></p>
+        <button id="retry-button" class="button button-primary" type="button">Try again</button>
+        <p class="fallback-note">Manual local PDF upload is planned for a future version.</p>
+      </section>
+
+      <div id="profile-content" hidden>
+        <section class="card hero-card">
+          <div class="hero-copy">
+            <p class="eyebrow">Latest treated water profile</p>
+            <h2 id="profile-name"></h2>
+            <p id="report-meta" class="muted"></p>
+          </div>
+          <div class="hero-actions">
+            <button id="copy-button" class="button button-primary" type="button">
+              <span>Copy values</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="card profile-card">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Manual entry</p>
+              <h2>Brewfather values</h2>
+            </div>
+            <span class="unit-chip">ppm unless noted</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Field</th><th>Value</th><th>Unit</th></tr>
+              </thead>
+              <tbody id="profile-table"></tbody>
+            </table>
+          </div>
+          <p class="quiet-note">Enter these values manually in Brewfather. This app never connects to your Brewfather account.</p>
+        </section>
+
+        <details class="card details-card">
+          <summary>
+            <span>
+              <span class="eyebrow">Audit trail</span>
+              <strong>Raw MWRA values &amp; conversions</strong>
+            </span>
+            <span class="summary-icon" aria-hidden="true"></span>
+          </summary>
+          <div class="details-content">
+            <p id="selected-column" class="source-column"></p>
+            <div class="table-wrap">
+              <table class="detail-table">
+                <thead>
+                  <tr><th>Field</th><th>MWRA source</th><th>Raw</th><th>Conversion</th><th>Result</th></tr>
+                </thead>
+                <tbody id="conversion-table"></tbody>
+              </table>
+            </div>
+          </div>
+        </details>
+
+        <details class="card details-card">
+          <summary>
+            <span>
+              <span class="eyebrow">Source document</span>
+              <strong>Original MWRA monthly report</strong>
+            </span>
+            <span class="summary-icon" aria-hidden="true"></span>
+          </summary>
+          <div class="details-content pdf-content">
+            <div class="pdf-toolbar">
+              <p>Cached locally from the official MWRA report.</p>
+              <a href="/api/latest/pdf" target="_blank" rel="noopener">Open PDF in a new tab</a>
+            </div>
+            <iframe title="Original MWRA monthly water quality report" data-src="/api/latest/pdf"></iframe>
+          </div>
+        </details>
+      </div>
+    </main>
+
+    <footer>
+      <p>Data source: <a href="https://www.mwra.com/your-water-system/drinking-water-quality/monthly-water-quality-test-results" target="_blank" rel="noopener">Massachusetts Water Resources Authority</a></p>
+      <p>Vibecoded with OpenAI Codex · AI-generated code may contain mistakes; verify values against the source PDF.</p>
+    </footer>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>
