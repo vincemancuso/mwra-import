@@ -89,9 +89,11 @@ function renderProfile(profile) {
 
   const pdfUrl = `/api/reports/${profile.report.report_year}/${profile.report.report_month_number}/pdf`;
   const brewfatherUrl = `/api/reports/${profile.report.report_year}/${profile.report.report_month_number}/brewfather.json`;
+  const beerxmlUrl = `/api/reports/${profile.report.report_year}/${profile.report.report_month_number}/beerxml.xml`;
   const pdfLink = document.querySelector("#pdf-link");
   const pdfFrame = document.querySelector("#pdf-frame");
   document.querySelector("#brewfather-download").href = brewfatherUrl;
+  document.querySelector("#beerxml-download").href = beerxmlUrl;
   pdfLink.href = pdfUrl;
   pdfFrame.dataset.src = pdfUrl;
   if (pdfFrame.closest("details").open) {

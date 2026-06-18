@@ -2,10 +2,9 @@ import base64
 import copy
 import gzip
 import json
-import time
 import uuid
-from datetime import UTC, datetime
 from functools import lru_cache
+from xml.etree import ElementTree as ET
 
 from app.models import WaterProfileResponse
 
@@ -40,7 +39,8 @@ def _water_source(profile: WaterProfileResponse) -> dict:
     anions = chloride / 35.453 + sulfate / 48.03 + bicarbonate / 61.0168
     hardness = calcium * 2.497 + magnesium * 4.118
     residual_alkalinity = alkalinity - calcium / 1.4 - magnesium / 1.7
-    now_ms = int(time.time() * 1000)
+    generated_at = profile.report.fetched_at
+    now_ms = int(generated_at.timestamp() * 1000)
     timestamp = {
         "type": "firestore/timestamp/1.0",
         "seconds": now_ms // 1000,
@@ -67,7 +67,10 @@ def _water_source(profile: WaterProfileResponse) -> dict:
         "residualAlkalinity": round(residual_alkalinity, 5),
         "anions": round(anions, 3),
         "bicarbonateMeqL": bicarbonate / 61.0168,
-        "_id": uuid.uuid4().hex[:22],
+        "_id": uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"mwra-water-{profile.report.report_year}-{profile.report.report_month_number}",
+        ).hex[:22],
         "name": f"MWRA Metro-Boston - {profile.report.report_month} {profile.report.report_year}",
         "chloride": chloride,
         "ionBalanceOff": False,
@@ -85,15 +88,19 @@ def build_brewfather_recipe(profile: WaterProfileResponse) -> dict:
         f"{profile.report.report_year} Recipe"
     )
     source = _water_source(profile)
-    now = datetime.now(UTC)
+    now = profile.report.fetched_at
     now_ms = int(now.timestamp() * 1000)
 
     recipe["name"] = recipe_name
     recipe["author"] = ""
     recipe["tags"] = None
     recipe["searchTags"] = []
-    recipe["_id"] = uuid.uuid4().hex[:22]
-    recipe["_versionId"] = uuid.uuid4().hex[:22]
+    recipe_id = uuid.uuid5(
+        uuid.NAMESPACE_URL,
+        f"mwra-recipe-{profile.report.report_year}-{profile.report.report_month_number}",
+    ).hex[:22]
+    recipe["_id"] = recipe_id
+    recipe["_versionId"] = recipe_id
     recipe["_timestamp_ms"] = now_ms
     recipe["_timestamp"] = now.isoformat(timespec="milliseconds").replace("+00:00", "Z")
     recipe["_created"] = source["_created"]
@@ -113,3 +120,139 @@ def brewfather_filename(profile: WaterProfileResponse) -> str:
     month = profile.report.report_month
     year = profile.report.report_year
     return f"Brewfather_RECIPE_Dummy_MWRA_{month}_{year}_Recipe.json"
+
+
+def _text(parent: ET.Element, tag: str, value: object | None = None) -> ET.Element:
+    element = ET.SubElement(parent, tag)
+    if value is not None:
+        element.text = str(value)
+    return element
+
+
+def _bool(value: object) -> str:
+    return "true" if value else "false"
+
+
+def build_beerxml(recipe: dict) -> bytes:
+    root = ET.Element("RECIPES")
+    xml_recipe = ET.SubElement(root, "RECIPE")
+    _text(xml_recipe, "NAME", recipe["name"])
+    _text(xml_recipe, "VERSION", 1)
+    _text(xml_recipe, "TYPE", recipe["type"])
+    _text(xml_recipe, "NOTES")
+
+    style = ET.SubElement(xml_recipe, "STYLE")
+    _text(style, "NAME", recipe["style"].get("name"))
+    _text(style, "CATEGORY")
+    _text(style, "VERSION", 1)
+    _text(style, "CATEGORY_NUMBER")
+    _text(style, "STYLE_LETTER")
+    _text(style, "STYLE_GUIDE")
+    _text(style, "TYPE", recipe["type"])
+    for tag in (
+        "OG_MIN",
+        "OG_MAX",
+        "FG_MIN",
+        "FG_MAX",
+        "IBU_MIN",
+        "IBU_MAX",
+        "COLOR_MIN",
+        "COLOR_MAX",
+    ):
+        _text(style, tag)
+
+    # Brewfather's BREWER field corresponds to the JSON author. Keep both blank.
+    _text(xml_recipe, "BREWER", recipe["author"])
+    _text(xml_recipe, "BATCH_SIZE", recipe["batchSize"])
+    _text(xml_recipe, "BOIL_SIZE", recipe["boilSize"])
+    _text(xml_recipe, "BOIL_TIME", recipe["boilTime"])
+    _text(xml_recipe, "EFFICIENCY", recipe["efficiency"])
+    _text(xml_recipe, "OG", round(recipe["og"], 3))
+    _text(xml_recipe, "FG", recipe["fg"])
+    _text(xml_recipe, "ABV", f'{recipe["abv"]} %')
+    _text(xml_recipe, "EST_ABV", f'{recipe["abv"]} %')
+    _text(xml_recipe, "IBU", recipe["ibu"])
+    _text(xml_recipe, "EST_OG", f'{round(recipe["og"], 3)} SG')
+    _text(xml_recipe, "EST_FG", f'{recipe["fg"]} SG')
+    _text(xml_recipe, "EST_COLOR", f'{recipe["color"]} SRM')
+    _text(xml_recipe, "CARBONATION", recipe["carbonation"])
+
+    fermentables = ET.SubElement(xml_recipe, "FERMENTABLES")
+    for item in recipe["fermentables"]:
+        fermentable = ET.SubElement(fermentables, "FERMENTABLE")
+        _text(fermentable, "BF_ID", item.get("_id"))
+        _text(fermentable, "NAME", item["name"])
+        _text(fermentable, "SUPPLIER", item.get("supplier"))
+        _text(fermentable, "ORIGIN", item.get("origin"))
+        _text(fermentable, "VERSION", 1)
+        _text(fermentable, "TYPE", item["type"])
+        _text(fermentable, "AMOUNT", item["amount"])
+        _text(fermentable, "YIELD", item["potentialPercentage"])
+        _text(fermentable, "COLOR", item["color"])
+        _text(fermentable, "ADD_AFTER_BOIL", "false")
+        _text(fermentable, "NOT_FERMENTABLE", _bool(item["notFermentable"]))
+        _text(fermentable, "IBU_GAL_PER_LB", item.get("ibuPerAmount") or 0)
+
+    # BeerXML supports water profiles even though the supplied Brewfather
+    # BeerXML example omitted them. Include one source profile so the export
+    # actually carries the selected MWRA chemistry.
+    waters = ET.SubElement(xml_recipe, "WATERS")
+    source = recipe["water"]["source"]
+    water = ET.SubElement(waters, "WATER")
+    _text(water, "NAME", source["name"])
+    _text(water, "VERSION", 1)
+    _text(water, "AMOUNT", recipe["data"]["totalWaterAmount"])
+    _text(water, "CALCIUM", source["calcium"])
+    _text(water, "BICARBONATE", source["bicarbonate"])
+    _text(water, "SULFATE", source["sulfate"])
+    _text(water, "CHLORIDE", source["chloride"])
+    _text(water, "SODIUM", source["sodium"])
+    _text(water, "MAGNESIUM", source["magnesium"])
+    _text(water, "PH", source["ph"])
+    _text(water, "ALKALINITY", source["alkalinity"])
+    _text(water, "NOTES")
+
+    mash = ET.SubElement(xml_recipe, "MASH")
+    _text(mash, "BF_ID")
+    _text(mash, "NAME", recipe["mash"]["name"])
+    _text(mash, "VERSION", 1)
+    _text(mash, "GRAIN_TEMP", 20)
+    mash_steps = ET.SubElement(mash, "MASH_STEPS")
+    for item in recipe["mash"]["steps"]:
+        step = ET.SubElement(mash_steps, "MASH_STEP")
+        _text(step, "NAME", item["type"])
+        _text(step, "VERSION", 1)
+        _text(step, "TYPE", item["type"])
+        _text(step, "STEP_TEMP", item["stepTemp"])
+        _text(step, "STEP_TIME", item["stepTime"])
+        _text(step, "INFUSE_AMOUNT", recipe["data"]["mashWaterAmount"])
+
+    equipment_data = recipe["equipment"]
+    equipment = ET.SubElement(xml_recipe, "EQUIPMENT")
+    _text(equipment, "NAME", equipment_data["name"])
+    _text(equipment, "VERSION", 1)
+    _text(equipment, "BOIL_SIZE", equipment_data["boilSize"])
+    _text(equipment, "BATCH_SIZE", equipment_data["batchSize"])
+    _text(equipment, "TRUB_CHILLER_LOSS", equipment_data["trubChillerLoss"])
+    _text(equipment, "LAUTER_DEADSPACE", equipment_data["mashTunDeadSpace"])
+    _text(equipment, "BOIL_TIME", equipment_data["boilTime"])
+    _text(equipment, "HOP_UTILIZATION", equipment_data["hopUtilization"] * 100)
+    _text(equipment, "EVAP_RATE", equipment_data["evaporationRate"] * 100)
+    _text(equipment, "CALC_BOIL_VOLUME", _bool(equipment_data["calcBoilVolume"]))
+
+    fermentation = recipe["fermentation"]
+    primary = fermentation["steps"][0]
+    _text(xml_recipe, "BF_FERMENTATION_PROFILE_ID")
+    _text(xml_recipe, "BF_FERMENTATION_PROFILE_NAME", fermentation["name"])
+    _text(xml_recipe, "FERMENTATION_STAGES", len(fermentation["steps"]))
+    _text(xml_recipe, "PRIMARY_AGE", primary["stepTime"])
+    _text(xml_recipe, "PRIMARY_TEMP", primary["stepTemp"])
+
+    ET.indent(root, space="    ")
+    return ET.tostring(root, encoding="ISO-8859-1", xml_declaration=True)
+
+
+def beerxml_filename(profile: WaterProfileResponse) -> str:
+    month = profile.report.report_month
+    year = profile.report.report_year
+    return f"Brewfather_BeerXML_Dummy_MWRA_{month}_{year}_Recipe.xml"

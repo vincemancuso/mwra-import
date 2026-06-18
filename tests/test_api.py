@@ -98,6 +98,7 @@ def test_ui_and_api_endpoints():
         selected = client.get("/api/reports/2026/3")
         selected_pdf = client.get("/api/reports/2026/3/pdf")
         brewfather = client.get("/api/reports/2026/3/brewfather.json")
+        beerxml = client.get("/api/reports/2026/3/beerxml.xml")
         missing = client.get("/api/reports/2025/12")
         api = client.get("/api/latest")
         pdf = client.get("/api/latest/pdf")
@@ -122,6 +123,12 @@ def test_ui_and_api_endpoints():
         assert recipe["water"][water_key]["calcium"] == 4.37
         assert recipe["water"][water_key]["bicarbonate"] == 49.17
         assert recipe["water"][water_key]["ph"] == 9.7
+    assert beerxml.status_code == 200
+    assert beerxml.headers["content-type"].startswith("application/xml")
+    assert "attachment" in beerxml.headers["content-disposition"]
+    assert "Dummy MWRA March 2026 Recipe" in beerxml.text
+    assert "<BREWER" in beerxml.text
+    assert "<CALCIUM>4.37</CALCIUM>" in beerxml.text
     assert missing.status_code == 404
     assert api.status_code == 200
     assert api.json()["brewfather_values"]["pH"] == 9.7

@@ -2,7 +2,14 @@ from datetime import UTC, datetime
 
 import pytest
 
-from app.brewfather import brewfather_filename, build_brewfather_recipe
+from xml.etree import ElementTree as ET
+
+from app.brewfather import (
+    beerxml_filename,
+    brewfather_filename,
+    build_beerxml,
+    build_brewfather_recipe,
+)
 from app.models import (
     BrewfatherValues,
     RawMeasurement,
@@ -46,8 +53,10 @@ def test_builds_blank_attribution_recipe_with_selected_water_profile():
     )
 
     recipe = build_brewfather_recipe(profile)
+    repeated_recipe = build_brewfather_recipe(profile)
 
     assert recipe["name"] == "Dummy MWRA April 2026 Recipe"
+    assert repeated_recipe == recipe
     assert recipe["author"] == ""
     assert recipe["tags"] is None
     assert recipe["searchTags"] == []
@@ -71,3 +80,27 @@ def test_builds_blank_attribution_recipe_with_selected_water_profile():
 
     for key in ("mash", "sparge", "total"):
         assert recipe["water"][key] == source
+
+    xml = build_beerxml(recipe)
+    root = ET.fromstring(xml)
+    xml_recipe = root.find("RECIPE")
+    assert xml_recipe is not None
+    assert xml_recipe.findtext("NAME") == recipe["name"]
+    assert xml_recipe.findtext("BREWER") in (None, "")
+    assert xml_recipe.findtext("BATCH_SIZE") == str(recipe["batchSize"])
+    assert xml_recipe.findtext("EQUIPMENT/NAME") == recipe["equipment"]["name"]
+
+    water = xml_recipe.find("WATERS/WATER")
+    assert water is not None
+    assert water.findtext("NAME") == source["name"]
+    assert float(water.findtext("CALCIUM")) == source["calcium"]
+    assert float(water.findtext("MAGNESIUM")) == source["magnesium"]
+    assert float(water.findtext("SODIUM")) == source["sodium"]
+    assert float(water.findtext("CHLORIDE")) == source["chloride"]
+    assert float(water.findtext("SULFATE")) == source["sulfate"]
+    assert float(water.findtext("BICARBONATE")) == source["bicarbonate"]
+    assert float(water.findtext("PH")) == source["ph"]
+
+    assert beerxml_filename(profile) == (
+        "Brewfather_BeerXML_Dummy_MWRA_April_2026_Recipe.xml"
+    )

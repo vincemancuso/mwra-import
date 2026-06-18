@@ -24,6 +24,7 @@ results for manual entry into Brewfather.
 - Displays calcium, magnesium, sodium, chloride, sulfate, bicarbonate, and pH.
 - Copies a ready-to-paste text profile to the clipboard.
 - Generates a Brewfather recipe JSON using the selected month's water profile.
+- Generates a matching BeerXML recipe from the same sanitized temporary batch.
 - Shows the raw MWRA measurements and conversion formulas.
 - Embeds the original cached PDF for easy verification.
 
@@ -34,6 +35,9 @@ The Brewfather download is based on a blank recipe export supplied during
 development. It names the recipe `Dummy MWRA <Month YYYY> Recipe`, leaves
 `author` blank, leaves `tags` unset, and fills the recipe's source, mash,
 sparge, and total water blocks with the selected MWRA profile.
+
+The BeerXML download is generated from that same in-memory temporary recipe,
+uses an empty `BREWER`, and includes a standard BeerXML `WATERS/WATER` block.
 
 ## Conversion rules
 
@@ -171,6 +175,7 @@ The browser interface uses two local endpoints:
 | `GET /api/reports/{year}/{month}` | Return one selected report profile |
 | `GET /api/reports/{year}/{month}/pdf` | Stream one selected cached report PDF |
 | `GET /api/reports/{year}/{month}/brewfather.json` | Download a Brewfather recipe containing the selected water profile |
+| `GET /api/reports/{year}/{month}/beerxml.xml` | Download the same temporary recipe as BeerXML |
 | `GET /api/latest` | Return report metadata, raw measurements, conversions, and display values |
 | `GET /api/latest/pdf` | Stream the cached MWRA source PDF |
 

@@ -1,11 +1,16 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app.brewfather import brewfather_filename, build_brewfather_recipe
+from app.brewfather import (
+    beerxml_filename,
+    brewfather_filename,
+    build_beerxml,
+    build_brewfather_recipe,
+)
 from app.config import APP_NAME, STATIC_DIR, TEMPLATES_DIR
 from app.errors import ReportNotFoundError, WaterProfileError
 from app.service import WaterProfileService
@@ -93,6 +98,21 @@ async def brewfather_recipe(request: Request, year: int, month: int):
             )
         },
         media_type="application/json",
+    )
+
+
+@app.get("/api/reports/{year}/{month}/beerxml.xml")
+async def beerxml_recipe(request: Request, year: int, month: int):
+    profile, _ = await service(request).profile(year, month)
+    recipe = build_brewfather_recipe(profile)
+    return Response(
+        content=build_beerxml(recipe),
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{beerxml_filename(profile)}"'
+            )
+        },
+        media_type="application/xml",
     )
 
 
