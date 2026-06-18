@@ -12,3 +12,7 @@ class ReportDownloadError(WaterProfileError):
 
 class ReportParseError(WaterProfileError):
     """The report PDF did not contain the expected mineral values."""
+
+
+class ReportNotFoundError(WaterProfileError):
+    """The requested linked monthly report does not exist."""

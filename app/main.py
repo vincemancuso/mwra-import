@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.config import APP_NAME, STATIC_DIR, TEMPLATES_DIR
-from app.errors import WaterProfileError
+from app.errors import ReportNotFoundError, WaterProfileError
 from app.service import WaterProfileService
 
 
@@ -30,7 +30,7 @@ async def water_profile_error_handler(
     request: Request, exc: WaterProfileError
 ) -> JSONResponse:
     return JSONResponse(
-        status_code=502,
+        status_code=404 if isinstance(exc, ReportNotFoundError) else 502,
         content={
             "error": type(exc).__name__,
             "message": str(exc),
@@ -55,6 +55,30 @@ async def index(request: Request):
 async def latest(request: Request):
     profile, _ = await service(request).latest()
     return profile
+
+
+@app.get("/api/reports")
+async def reports(request: Request):
+    return await service(request).reports()
+
+
+@app.get("/api/reports/{year}/{month}")
+async def report_profile(request: Request, year: int, month: int):
+    profile, _ = await service(request).profile(year, month)
+    return profile
+
+
+@app.get("/api/reports/{year}/{month}/pdf", response_class=FileResponse)
+async def report_pdf(request: Request, year: int, month: int):
+    _, pdf_path = await service(request).profile(year, month)
+    if not pdf_path.exists():
+        raise HTTPException(status_code=404, detail="The cached report PDF is missing.")
+    return FileResponse(
+        pdf_path,
+        media_type="application/pdf",
+        filename=pdf_path.name,
+        content_disposition_type="inline",
+    )
 
 
 @app.get("/api/latest/pdf", response_class=FileResponse)

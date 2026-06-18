@@ -16,6 +16,8 @@ results for manual entry into Brewfather.
 ## What it does
 
 - Finds the newest linked monthly report on the MWRA website.
+- Lists every monthly report currently linked on that page and lets you switch
+  between them, defaulting to the newest one.
 - Downloads and caches the source PDF in `data/reports/`.
 - Extracts the `Carroll Water TP Fin. Water Tap (Treated)` values.
 - Converts MWRA units into Brewfather-friendly values.
@@ -159,6 +161,9 @@ The browser interface uses two local endpoints:
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /` | Render the web interface |
+| `GET /api/reports` | List all linked reports and identify the latest one |
+| `GET /api/reports/{year}/{month}` | Return one selected report profile |
+| `GET /api/reports/{year}/{month}/pdf` | Stream one selected cached report PDF |
 | `GET /api/latest` | Return report metadata, raw measurements, conversions, and display values |
 | `GET /api/latest/pdf` | Stream the cached MWRA source PDF |
 
@@ -186,10 +191,10 @@ data/reports/      Local PDF cache; downloaded PDFs are ignored by Git
 
 ## How report caching works
 
-On the first request, the app downloads the newest linked MWRA report into
-`data/reports/`. Later requests in the same running process reuse the parsed
-profile, and later app starts reuse a valid cached PDF with the same report
-month.
+On the first request for a month, the app downloads that linked MWRA report
+into `data/reports/`. Later requests in the same running process reuse the
+parsed profile, and later app starts reuse a valid cached PDF with the same
+report month.
 
 To force a fresh download manually, stop the app and delete the relevant PDF
 from `data/reports/`. The next request will download it again.

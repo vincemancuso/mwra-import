@@ -41,11 +41,15 @@
       <div id="profile-content" hidden>
         <section class="card hero-card">
           <div class="hero-copy">
-            <p class="eyebrow">Latest treated water profile</p>
+            <p class="eyebrow">Treated water profile</p>
             <h2 id="profile-name"></h2>
             <p id="report-meta" class="muted"></p>
           </div>
           <div class="hero-actions">
+            <label class="report-picker">
+              <span>Report month</span>
+              <select id="report-select" aria-label="Select MWRA report month"></select>
+            </label>
             <button id="copy-button" class="button button-primary" type="button">
               <span>Copy values</span>
             </button>
@@ -103,9 +107,9 @@
           <div class="details-content pdf-content">
             <div class="pdf-toolbar">
               <p>Cached locally from the official MWRA report.</p>
-              <a href="/api/latest/pdf" target="_blank" rel="noopener">Open PDF in a new tab</a>
+              <a id="pdf-link" href="/api/latest/pdf" target="_blank" rel="noopener">Open PDF in a new tab</a>
             </div>
-            <iframe title="Original MWRA monthly water quality report" data-src="/api/latest/pdf"></iframe>
+            <iframe id="pdf-frame" title="Original MWRA monthly water quality report" data-src="/api/latest/pdf"></iframe>
           </div>
         </details>
       </div>

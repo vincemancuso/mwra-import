@@ -11,8 +11,10 @@ const fieldOrder = [
 const loadingCard = document.querySelector("#loading-card");
 const errorCard = document.querySelector("#error-card");
 const profileContent = document.querySelector("#profile-content");
+const reportSelect = document.querySelector("#report-select");
 const toast = document.querySelector("#toast");
 let currentProfile = null;
+let latestReportKey = null;
 
 const formatValue = (value) => Number(value).toFixed(2).replace(/\.?0+$/, "");
 const titleCase = (value) => value.charAt(0).toUpperCase() + value.slice(1);
@@ -56,9 +58,11 @@ async function writeClipboard(text) {
 
 function renderProfile(profile) {
   currentProfile = profile;
+  const reportKey = `${profile.report.report_year}-${String(profile.report.report_month_number || "").padStart(2, "0")}`;
+  reportSelect.value = reportKey;
   document.querySelector("#profile-name").textContent = profile.name;
   document.querySelector("#report-meta").textContent =
-    `${profile.report.report_month} ${profile.report.report_year} report · Cached ${new Date(profile.report.fetched_at).toLocaleString()}`;
+    `${profile.report.report_month} ${profile.report.report_year} report${reportKey === latestReportKey ? " · Latest available" : ""} · Cached ${new Date(profile.report.fetched_at).toLocaleString()}`;
   document.querySelector("#selected-column").textContent =
     `Selected MWRA column: ${profile.report.selected_column}`;
 
@@ -83,6 +87,18 @@ function renderProfile(profile) {
       </tr>`)
     .join("");
 
+  const pdfUrl = `/api/reports/${profile.report.report_year}/${profile.report.report_month_number}/pdf`;
+  const pdfLink = document.querySelector("#pdf-link");
+  const pdfFrame = document.querySelector("#pdf-frame");
+  pdfLink.href = pdfUrl;
+  pdfFrame.dataset.src = pdfUrl;
+  if (pdfFrame.closest("details").open) {
+    pdfFrame.src = pdfUrl;
+  } else {
+    pdfFrame.removeAttribute("src");
+  }
+
+  reportSelect.disabled = false;
   loadingCard.hidden = true;
   errorCard.hidden = true;
   profileContent.hidden = false;
@@ -98,15 +114,38 @@ function renderError(payload) {
     payload.message || payload.detail || "An unexpected error occurred.";
 }
 
-async function loadProfile() {
+async function fetchJson(url) {
+  const response = await fetch(url, { headers: { Accept: "application/json" } });
+  const payload = await response.json();
+  if (!response.ok) throw payload;
+  return payload;
+}
+
+async function loadProfile(year, month, initial = false) {
   loadingCard.hidden = false;
   errorCard.hidden = true;
-  profileContent.hidden = true;
+  reportSelect.disabled = true;
+  if (initial) profileContent.hidden = true;
   try {
-    const response = await fetch("/api/latest", { headers: { Accept: "application/json" } });
-    const payload = await response.json();
-    if (!response.ok) throw payload;
+    const payload = await fetchJson(`/api/reports/${year}/${month}`);
     renderProfile(payload);
+  } catch (error) {
+    renderError(error instanceof Error ? { message: error.message } : error);
+  }
+}
+
+async function initialize() {
+  try {
+    const catalog = await fetchJson("/api/reports");
+    latestReportKey = `${catalog.latest.year}-${String(catalog.latest.month).padStart(2, "0")}`;
+    reportSelect.innerHTML = catalog.reports
+      .map((report) => {
+        const key = `${report.year}-${String(report.month).padStart(2, "0")}`;
+        return `<option value="${key}">${report.month_year}${key === latestReportKey ? " (latest)" : ""}</option>`;
+      })
+      .join("");
+    reportSelect.value = latestReportKey;
+    await loadProfile(catalog.latest.year, catalog.latest.month, true);
   } catch (error) {
     renderError(error instanceof Error ? { message: error.message } : error);
   }
@@ -118,7 +157,12 @@ document.querySelector("#copy-button").addEventListener("click", async () => {
   showToast(copied ? "Brewfather values copied" : "Clipboard access was unavailable");
 });
 
-document.querySelector("#retry-button").addEventListener("click", loadProfile);
+document.querySelector("#retry-button").addEventListener("click", initialize);
+
+reportSelect.addEventListener("change", () => {
+  const [year, month] = reportSelect.value.split("-").map(Number);
+  loadProfile(year, month);
+});
 
 document.querySelectorAll("details").forEach((details) => {
   details.addEventListener("toggle", () => {
@@ -128,4 +172,4 @@ document.querySelectorAll("details").forEach((details) => {
   });
 });
 
-loadProfile();
+initialize();

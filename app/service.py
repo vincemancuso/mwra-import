@@ -12,9 +12,13 @@ from app.config import (
     USER_AGENT,
 )
 from app.conversions import convert_measurements
-from app.discovery import select_latest_report
-from app.errors import ReportDiscoveryError, ReportDownloadError
-from app.models import ReportLink, ReportMetadata, WaterProfileResponse
+from app.discovery import find_report_links
+from app.errors import (
+    ReportDiscoveryError,
+    ReportDownloadError,
+    ReportNotFoundError,
+)
+from app.models import ReportCatalog, ReportLink, ReportMetadata, WaterProfileResponse
 from app.parser import parse_report_pdf
 
 
@@ -29,7 +33,10 @@ class WaterProfileService:
         self.reports_dir = reports_dir
         self._client = client
         self._lock = asyncio.Lock()
-        self._latest: tuple[WaterProfileResponse, Path] | None = None
+        self._catalog: ReportCatalog | None = None
+        self._profiles: dict[
+            tuple[int, int], tuple[WaterProfileResponse, Path]
+        ] = {}
 
     async def _request(self, url: str) -> httpx.Response:
         if self._client:
@@ -41,7 +48,7 @@ class WaterProfileService:
         ) as client:
             return await client.get(url)
 
-    async def discover(self) -> ReportLink:
+    async def discover(self) -> ReportCatalog:
         try:
             response = await self._request(self.source_url)
             response.raise_for_status()
@@ -49,7 +56,20 @@ class WaterProfileService:
             raise ReportDiscoveryError(
                 f"Could not fetch the MWRA monthly reports page: {exc}"
             ) from exc
-        return select_latest_report(response.text)
+        reports = find_report_links(response.text)
+        if not reports:
+            raise ReportDiscoveryError(
+                "No linked monthly MWRA water-quality PDFs were found. "
+                "The MWRA page layout may have changed."
+            )
+        reports.reverse()
+        return ReportCatalog(reports=reports, latest=reports[0])
+
+    async def reports(self, force_refresh: bool = False) -> ReportCatalog:
+        async with self._lock:
+            if self._catalog is None or force_refresh:
+                self._catalog = await self.discover()
+            return self._catalog
 
     async def cache_pdf(self, report: ReportLink) -> Path:
         self.reports_dir.mkdir(parents=True, exist_ok=True)
@@ -63,29 +83,32 @@ class WaterProfileService:
             response.raise_for_status()
         except (httpx.HTTPError, OSError) as exc:
             raise ReportDownloadError(
-                f"Could not download the latest MWRA report ({report.month_year}): {exc}"
+                f"Could not download the MWRA report ({report.month_year}): {exc}"
             ) from exc
         if not response.content.startswith(b"%PDF"):
             raise ReportDownloadError(
-                "The latest MWRA report link did not return a PDF. "
+                "The selected MWRA report link did not return a PDF. "
                 "The MWRA website may have changed."
             )
         destination.write_bytes(response.content)
         return destination
 
-    async def latest(self, force_refresh: bool = False) -> tuple[WaterProfileResponse, Path]:
-        async with self._lock:
-            if self._latest and not force_refresh:
-                return self._latest
+    async def _build_profile(
+        self, report: ReportLink, force_refresh: bool = False
+    ) -> tuple[WaterProfileResponse, Path]:
+        key = (report.year, report.month)
+        if key in self._profiles and not force_refresh:
+            return self._profiles[key]
 
-            report = await self.discover()
-            pdf_path = await self.cache_pdf(report)
-            raw = await asyncio.to_thread(parse_report_pdf, pdf_path)
-            brewfather, conversions = convert_measurements(raw)
-            profile = WaterProfileResponse(
+        pdf_path = await self.cache_pdf(report)
+        raw = await asyncio.to_thread(parse_report_pdf, pdf_path)
+        brewfather, conversions = convert_measurements(raw)
+        result = (
+            WaterProfileResponse(
                 name=f"MWRA Metro-Boston Tap Water - {report.month_year}",
                 report=ReportMetadata(
                     report_month=report.report_date.strftime("%B"),
+                    report_month_number=report.month,
                     report_year=report.year,
                     report_label=report.label,
                     source_page_url=self.source_url,
@@ -97,6 +120,36 @@ class WaterProfileService:
                 raw_values=raw,
                 conversions=conversions,
                 brewfather_values=brewfather,
+            ),
+            pdf_path,
+        )
+        self._profiles[key] = result
+        return result
+
+    async def profile(
+        self, year: int, month: int, force_refresh: bool = False
+    ) -> tuple[WaterProfileResponse, Path]:
+        async with self._lock:
+            if self._catalog is None:
+                self._catalog = await self.discover()
+            report = next(
+                (
+                    candidate
+                    for candidate in self._catalog.reports
+                    if candidate.year == year and candidate.month == month
+                ),
+                None,
             )
-            self._latest = (profile, pdf_path)
-            return self._latest
+            if report is None:
+                raise ReportNotFoundError(
+                    f"No linked MWRA monthly report was found for {year:04d}-{month:02d}."
+                )
+            return await self._build_profile(report, force_refresh)
+
+    async def latest(
+        self, force_refresh: bool = False
+    ) -> tuple[WaterProfileResponse, Path]:
+        async with self._lock:
+            if self._catalog is None or force_refresh:
+                self._catalog = await self.discover()
+            return await self._build_profile(self._catalog.latest, force_refresh)

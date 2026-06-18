@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 
 class ReportLink(BaseModel):
@@ -15,6 +15,7 @@ class ReportLink(BaseModel):
     def report_date(self) -> date:
         return date(self.year, self.month, 1)
 
+    @computed_field
     @property
     def month_year(self) -> str:
         return self.report_date.strftime("%B %Y")
@@ -22,6 +23,11 @@ class ReportLink(BaseModel):
     @property
     def cache_filename(self) -> str:
         return f"mwra-water-quality-{self.year:04d}-{self.month:02d}.pdf"
+
+
+class ReportCatalog(BaseModel):
+    reports: list[ReportLink]
+    latest: ReportLink
 
 
 class RawMeasurement(BaseModel):
@@ -55,6 +61,7 @@ class BrewfatherValues(BaseModel):
 
 class ReportMetadata(BaseModel):
     report_month: str
+    report_month_number: int = Field(ge=1, le=12)
     report_year: int
     report_label: str
     source_page_url: str
