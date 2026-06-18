@@ -40,6 +40,14 @@ class FixtureService:
                 fetched_at=datetime(2026, 5, 1, tzinfo=UTC),
             ),
             raw_values={"calcium": raw},
+            other_values=[
+                RawMeasurement(
+                    parameter="Hardness",
+                    value=14.4,
+                    unit="MG/L",
+                    source_label="fixture",
+                )
+            ],
             conversions=[
                 Conversion(
                     field="calcium",
@@ -105,12 +113,17 @@ def test_ui_and_api_endpoints():
 
     assert page.status_code == 200
     assert "MWRA Brewfather Water Profile" in page.text
+    assert "Boston Wort Processors Present:" in page.text
     assert 'id="report-select"' in page.text
+    assert "Other treated-water measurements" in page.text
+    assert "About the Brewfather JSON export" in page.text
+    assert "About the BeerXML export" in page.text
     assert reports.status_code == 200
     assert reports.json()["latest"]["month"] == 4
     assert reports.json()["reports"][1]["month_year"] == "March 2026"
     assert selected.status_code == 200
     assert selected.json()["report"]["report_month"] == "March"
+    assert selected.json()["other_values"][0]["parameter"] == "Hardness"
     assert selected_pdf.status_code == 200
     assert brewfather.status_code == 200
     assert "attachment" in brewfather.headers["content-disposition"]

@@ -16,6 +16,7 @@ PARAMETER_ALIASES = {
     "alkalinity": ("alkalinity",),
     "ph": ("ph",),
 }
+BREWFATHER_PARAMETER_KEYS = {"calcium", "magnesium", "sodium", "chloride", "sulfate", "ph"}
 UNIT_PATTERN = re.compile(
     r"(mg\s*/\s*l|[uμµ]g\s*/\s*l|ppm|\bstandard units?\b|(?<![A-Za-z])s\.?u\.?(?![A-Za-z]))",
     re.I,
@@ -95,6 +96,57 @@ def _from_tables(pdf: pdfplumber.PDF) -> dict[str, RawMeasurement]:
     return found
 
 
+def _other_treated_values(pdf: pdfplumber.PDF) -> list[RawMeasurement]:
+    found: dict[str, RawMeasurement] = {}
+    for page in pdf.pages:
+        for table in page.extract_tables() or []:
+            rows = [[_clean(cell) for cell in row] for row in table if row]
+            if not rows:
+                continue
+            header = rows[0]
+            treated_indexes = [
+                index
+                for index, cell in enumerate(header)
+                if any(
+                    token in cell.lower()
+                    for token in ("carroll", "metro-boston", "finished", "treated")
+                )
+            ]
+            unit_indexes = [
+                index for index, cell in enumerate(header) if cell.lower() == "units"
+            ]
+            if not treated_indexes:
+                continue
+            treated_index = max(treated_indexes)
+            unit_index = unit_indexes[0] if unit_indexes else None
+
+            for row in rows[1:]:
+                if treated_index >= len(row):
+                    continue
+                parameter = row[0].strip()
+                if not parameter:
+                    continue
+                key = _parameter_key(parameter)
+                if key in BREWFATHER_PARAMETER_KEYS:
+                    continue
+                candidates = _numeric_cells([row[treated_index]])
+                if not candidates:
+                    continue
+                unit = (
+                    row[unit_index]
+                    if unit_index is not None and unit_index < len(row) and row[unit_index]
+                    else _unit_from_text(" | ".join(row), key or "")
+                )
+                normalized_name = re.sub(r"\s+", " ", parameter).strip()
+                found[normalized_name.lower()] = RawMeasurement(
+                    parameter=normalized_name,
+                    value=candidates[0],
+                    unit=unit,
+                    source_label="Metro-Boston treated/finished water",
+                )
+    return list(found.values())
+
+
 def _from_lines(pdf: pdfplumber.PDF) -> dict[str, RawMeasurement]:
     found: dict[str, RawMeasurement] = {}
     for page in pdf.pages:
@@ -119,7 +171,9 @@ def _from_lines(pdf: pdfplumber.PDF) -> dict[str, RawMeasurement]:
     return found
 
 
-def parse_report_pdf(path: Path) -> dict[str, RawMeasurement]:
+def parse_report_pdf_details(
+    path: Path,
+) -> tuple[dict[str, RawMeasurement], list[RawMeasurement]]:
     try:
         with pdfplumber.open(path) as pdf:
             if not pdf.pages:
@@ -128,6 +182,7 @@ def parse_report_pdf(path: Path) -> dict[str, RawMeasurement]:
             fallback = _from_lines(pdf)
             for key, measurement in fallback.items():
                 values.setdefault(key, measurement)
+            other_values = _other_treated_values(pdf)
     except ReportParseError:
         raise
     except Exception as exc:
@@ -141,4 +196,9 @@ def parse_report_pdf(path: Path) -> dict[str, RawMeasurement]:
             "MWRA may have changed the report layout. A local PDF upload fallback "
             "is planned for a future version."
         )
+    return values, other_values
+
+
+def parse_report_pdf(path: Path) -> dict[str, RawMeasurement]:
+    values, _ = parse_report_pdf_details(path)
     return values

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-labelledby="title desc">
+  <title id="title">Hop and water emblem</title>
+  <desc id="desc">An original olive hop cone cradling a cream water drop on a cranberry field.</desc>
+  <circle cx="80" cy="80" r="76" fill="#a7193f"/>
+  <path d="M80 27c-14 22-28 39-28 59a28 28 0 0 0 56 0c0-20-14-37-28-59Z" fill="#fff8e8"/>
+  <path d="M61 91c12-8 25 8 38 0" fill="none" stroke="#a7193f" stroke-width="7" stroke-linecap="round"/>
+  <g fill="#78943c" stroke="#30401f" stroke-width="2.5" stroke-linejoin="round">
+    <path d="M79 17c-12 8-15 18-10 29 9-2 15-8 18-19-1-4-4-8-8-10Z"/>
+    <path d="M51 30c-5 14 0 24 13 30 7-7 8-16 3-27-5-3-10-4-16-3Z"/>
+    <path d="M109 30c5 14 0 24-13 30-7-7-8-16-3-27 5-3 10-4 16-3Z"/>
+    <path d="M35 55c0 15 8 23 22 25 5-9 2-18-7-27-6-1-11 0-15 2Z"/>
+    <path d="M125 55c0 15-8 23-22 25-5-9-2-18 7-27 6-1 11 0 15 2Z"/>
+    <path d="M34 86c5 14 15 19 29 16 1-10-5-18-17-24-5 1-9 4-12 8Z"/>
+    <path d="M126 86c-5 14-15 19-29 16-1-10 5-18 17-24 5 1 9 4 12 8Z"/>
+    <path d="M47 113c9 11 20 13 32 6-2-10-10-15-23-17-5 3-8 6-9 11Z"/>
+    <path d="M113 113c-9 11-20 13-32 6 2-10 10-15 23-17 5 3 8 6 9 11Z"/>
+  </g>
+  <path d="M80 119v20" stroke="#78943c" stroke-width="7" stroke-linecap="round"/>
+</svg>

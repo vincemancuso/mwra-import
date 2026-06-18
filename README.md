@@ -22,6 +22,8 @@ results for manual entry into Brewfather.
 - Extracts the `Carroll Water TP Fin. Water Tap (Treated)` values.
 - Converts MWRA units into Brewfather-friendly values.
 - Displays calcium, magnesium, sodium, chloride, sulfate, bicarbonate, and pH.
+- Expands to show the other numeric Carroll finished-water measurements found
+  in the same MWRA report.
 - Copies a ready-to-paste text profile to the clipboard.
 - Generates a Brewfather recipe JSON using the selected month's water profile.
 - Generates a matching BeerXML recipe from the same sanitized temporary batch.
@@ -39,6 +41,14 @@ sparge, and total water blocks with the selected MWRA profile.
 The BeerXML download is generated from that same in-memory temporary recipe,
 uses an empty `BREWER`, and includes a standard BeerXML `WATERS/WATER` block.
 It follows the BeerXML 1.0 required recipe record sets and data types.
+
+Both export buttons include an in-app explanation of the temporary-recipe
+workaround and why the formats cannot directly install a reusable Brewfather
+water profile.
+
+The interface uses an original hop-and-water emblem and a cranberry, cream,
+and olive palette inspired by the Boston Wort Processors' public club banner.
+It does not reproduce the club's official logo.
 
 ## Conversion rules
 

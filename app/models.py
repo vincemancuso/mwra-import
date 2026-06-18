@@ -75,5 +75,6 @@ class WaterProfileResponse(BaseModel):
     name: str
     report: ReportMetadata
     raw_values: dict[str, RawMeasurement]
+    other_values: list[RawMeasurement] = Field(default_factory=list)
     conversions: list[Conversion]
     brewfather_values: BrewfatherValues

@@ -19,7 +19,7 @@ from app.errors import (
     ReportNotFoundError,
 )
 from app.models import ReportCatalog, ReportLink, ReportMetadata, WaterProfileResponse
-from app.parser import parse_report_pdf
+from app.parser import parse_report_pdf_details
 
 
 class WaterProfileService:
@@ -101,7 +101,7 @@ class WaterProfileService:
             return self._profiles[key]
 
         pdf_path = await self.cache_pdf(report)
-        raw = await asyncio.to_thread(parse_report_pdf, pdf_path)
+        raw, other_values = await asyncio.to_thread(parse_report_pdf_details, pdf_path)
         brewfather, conversions = convert_measurements(raw)
         result = (
             WaterProfileResponse(
@@ -118,6 +118,7 @@ class WaterProfileService:
                     fetched_at=datetime.now(UTC),
                 ),
                 raw_values=raw,
+                other_values=other_values,
                 conversions=conversions,
                 brewfather_values=brewfather,
             ),

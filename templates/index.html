@@ -9,16 +9,12 @@
   </head>
   <body>
     <header class="site-header">
-      <div class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 48 48" role="img">
-          <path d="M24 4C16 16 9 23 9 32a15 15 0 0 0 30 0C39 23 32 16 24 4Z"/>
-          <path class="wave" d="M13 33c5-3 9 3 14 0s8-2 10 0"/>
-        </svg>
-      </div>
+      <img class="brand-mark" src="{{ url_for('static', path='/wort-water-mark.svg') }}" alt="">
       <div>
-        <p class="eyebrow">Local brewing utility</p>
+        <p class="eyebrow">Boston Wort Processors Present:</p>
         <h1>MWRA Brewfather Water Profile</h1>
       </div>
+      <a class="club-link" href="http://www.wort.org" target="_blank" rel="noopener">wort.org</a>
     </header>
 
     <main>
@@ -53,12 +49,20 @@
             <button id="copy-button" class="button button-primary" type="button">
               <span>Copy values</span>
             </button>
-            <a id="brewfather-download" class="button button-secondary" href="#" download>
-              Download Brewfather JSON
-            </a>
-            <a id="beerxml-download" class="button button-secondary" href="#" download>
-              Download BeerXML
-            </a>
+            <span class="export-action">
+              <a id="brewfather-download" class="button button-secondary" href="#" download>
+                Download Brewfather JSON
+              </a>
+              <button class="info-tip" type="button" aria-label="About the Brewfather JSON export" aria-describedby="json-export-tip">?</button>
+              <span class="tip-content" id="json-export-tip" role="tooltip">Creates a temporary dummy recipe containing this water chemistry. Brewfather exports cannot create a reusable, independently reconfigurable water profile, so import the recipe and copy or save its water source inside Brewfather.</span>
+            </span>
+            <span class="export-action">
+              <a id="beerxml-download" class="button button-secondary" href="#" download>
+                Download BeerXML
+              </a>
+              <button class="info-tip" type="button" aria-label="About the BeerXML export" aria-describedby="xml-export-tip">?</button>
+              <span class="tip-content" id="xml-export-tip" role="tooltip">Exports the same temporary dummy recipe as BeerXML with a standard WATER record. BeerXML carries recipe water, but cannot install a standalone reusable Brewfather water profile.</span>
+            </span>
           </div>
         </section>
 
@@ -80,6 +84,20 @@
           </div>
           <p class="quiet-note">Enter these values manually in Brewfather. This app never connects to your Brewfather account.</p>
         </section>
+
+        <details class="card details-card stats-card">
+          <summary>
+            <span>
+              <span class="eyebrow">More from the report</span>
+              <strong>Other treated-water measurements</strong>
+            </span>
+            <span class="summary-icon" aria-hidden="true"></span>
+          </summary>
+          <div class="details-content">
+            <p class="source-column">Additional numeric results reported for the Carroll finished-water tap. Values marked “U” or otherwise non-numeric are omitted.</p>
+            <div class="stats-grid" id="other-values"></div>
+          </div>
+        </details>
 
         <details class="card details-card">
           <summary>

@@ -18,6 +18,12 @@ let latestReportKey = null;
 
 const formatValue = (value) => Number(value).toFixed(2).replace(/\.?0+$/, "");
 const titleCase = (value) => value.charAt(0).toUpperCase() + value.slice(1);
+const escapeHtml = (value) => String(value)
+  .replaceAll("&", "&amp;")
+  .replaceAll("<", "&lt;")
+  .replaceAll(">", "&gt;")
+  .replaceAll('"', "&quot;")
+  .replaceAll("'", "&#039;");
 
 function showToast(message) {
   toast.textContent = message;
@@ -86,6 +92,17 @@ function renderProfile(profile) {
         <td>${formatValue(conversion.result)} ${conversion.result_unit}</td>
       </tr>`)
     .join("");
+
+  const otherValues = profile.other_values || [];
+  document.querySelector("#other-values").innerHTML = otherValues.length
+    ? otherValues
+      .map((measurement) => `
+        <div class="stat-item">
+          <span class="stat-label">${escapeHtml(measurement.parameter)}</span>
+          <span class="stat-value">${formatValue(measurement.value)} ${escapeHtml(measurement.unit)}</span>
+        </div>`)
+      .join("")
+    : '<p class="muted">No additional numeric measurements were found in this report.</p>';
 
   const pdfUrl = `/api/reports/${profile.report.report_year}/${profile.report.report_month_number}/pdf`;
   const brewfatherUrl = `/api/reports/${profile.report.report_year}/${profile.report.report_month_number}/brewfather.json`;
