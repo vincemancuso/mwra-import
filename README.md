@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Boston Wort Processors Present</strong><br>
-  A brewing-water utility from members of Boston's homebrew community.
+  A brewing-water utility for members of Boston's homebrew community.
 </p>
 
 <p align="center">
@@ -18,6 +18,14 @@ A small local web app that finds the latest
 extracts the Metro-Boston treated-water mineral analysis, and formats the
 results for manual entry into Brewfather.
 
+> [!IMPORTANT]
+> **This project is vibecoded.** The initial application, parser, interface,
+> tests, and documentation were produced through an AI-assisted conversation
+> with OpenAI Codex, directed and reviewed by the repository owner. It has been
+> tested against fixtures and a live MWRA report, but it should not be treated
+> as professionally audited water-chemistry or production software. See
+> [AI_DISCLOSURE.md](AI_DISCLOSURE.md) for the full disclosure.
+
 ## About the Boston Wort Processors
 
 The [Boston Wort Processors](http://www.wort.org) are a Boston-area homebrew
@@ -27,13 +35,6 @@ education, competitions, shared resources, and community events.
 Visit [wort.org](http://www.wort.org) to learn about the club, membership,
 upcoming events, educational resources, and homebrewing activities.
 
-> [!IMPORTANT]
-> **This project is vibecoded.** The initial application, parser, interface,
-> tests, and documentation were produced through an AI-assisted conversation
-> with OpenAI Codex, directed and reviewed by the repository owner. It has been
-> tested against fixtures and a live MWRA report, but it should not be treated
-> as professionally audited water-chemistry or production software. See
-> [AI_DISCLOSURE.md](AI_DISCLOSURE.md) for the full disclosure.
 
 ## What it does
 
