@@ -4,8 +4,8 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ app_name }}</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v=20260619-2">
-    <script src="{{ url_for('static', path='/app.js') }}" defer></script>
+    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v=20260619-3">
+    <script src="{{ url_for('static', path='/app.js') }}?v=20260619-3" defer></script>
   </head>
   <body>
     <header class="site-header">
@@ -97,7 +97,7 @@
             <span class="summary-icon" aria-hidden="true"></span>
           </summary>
           <div class="details-content">
-            <p class="source-column">Additional numeric results reported for the Carroll finished-water tap. Values marked “U” or otherwise non-numeric are omitted.</p>
+            <p class="source-column">Additional numeric results reported for the Carroll finished-water tap, including any fields not selected in <code>app-config.toml</code>. Values marked “U” or otherwise non-numeric are omitted.</p>
             <div class="stats-grid" id="other-values"></div>
           </div>
         </details>
@@ -143,7 +143,7 @@
     </main>
 
     <footer>
-      <p>Data source: <a href="https://www.mwra.com/your-water-system/drinking-water-quality/monthly-water-quality-test-results" target="_blank" rel="noopener">Massachusetts Water Resources Authority</a></p>
+      <p>Data source: <a href="{{ mwra_reports_page_url }}" target="_blank" rel="noopener">Massachusetts Water Resources Authority</a></p>
       <p>Vibecoded with OpenAI Codex · AI-generated code may contain mistakes; verify values against the source PDF.</p>
     </footer>
 

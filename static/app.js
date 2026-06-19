@@ -1,13 +1,3 @@
-const fieldOrder = [
-  ["calcium", "Calcium", "ppm"],
-  ["magnesium", "Magnesium", "ppm"],
-  ["sodium", "Sodium", "ppm"],
-  ["chloride", "Chloride", "ppm"],
-  ["sulfate", "Sulfate", "ppm"],
-  ["bicarbonate", "Bicarbonate", "ppm"],
-  ["pH", "pH", ""],
-];
-
 const loadingCard = document.querySelector("#loading-card");
 const errorCard = document.querySelector("#error-card");
 const profileContent = document.querySelector("#profile-content");
@@ -32,13 +22,25 @@ function showToast(message) {
 }
 
 function copyText(profile) {
-  const values = profile.brewfather_values;
   return [
     `Name: ${profile.name}`,
-    ...fieldOrder.map(([key, label, unit]) =>
-      `${label}: ${formatValue(values[key])}${unit ? ` ${unit}` : ""}`
+    ...profile.profile_values.map((measurement) =>
+      `${measurement.label}: ${formatValue(measurement.value)}${measurement.unit ? ` ${measurement.unit}` : ""}`
     ),
   ].join("\n");
+}
+
+function measurementHelp(measurement, idPrefix) {
+  const tooltipId = `${idPrefix}-${measurement.key.replaceAll("_", "-")}-tip`;
+  return `
+    <span class="measurement-help">
+      <button class="measurement-info" type="button"
+        aria-label="About ${escapeHtml(measurement.label)}"
+        aria-describedby="${tooltipId}">?</button>
+      <span class="measurement-tip-content" id="${tooltipId}" role="tooltip">
+        ${escapeHtml(measurement.description)}
+      </span>
+    </span>`;
 }
 
 async function writeClipboard(text) {
@@ -72,13 +74,15 @@ function renderProfile(profile) {
   document.querySelector("#selected-column").textContent =
     `Selected MWRA column: ${profile.report.selected_column}`;
 
-  const values = profile.brewfather_values;
-  document.querySelector("#profile-table").innerHTML = fieldOrder
-    .map(([key, label, unit]) => `
+  document.querySelector("#profile-table").innerHTML = profile.profile_values
+    .map((measurement) => `
       <tr>
-        <td>${label}</td>
-        <td>${formatValue(values[key])}</td>
-        <td>${unit || "—"}</td>
+        <td>
+          <span class="measurement-label">${escapeHtml(measurement.label)}</span>
+          ${measurementHelp(measurement, "main")}
+        </td>
+        <td>${formatValue(measurement.value)}</td>
+        <td>${escapeHtml(measurement.unit) || "—"}</td>
       </tr>`)
     .join("");
 
@@ -98,7 +102,10 @@ function renderProfile(profile) {
     ? otherValues
       .map((measurement) => `
         <div class="stat-item">
-          <span class="stat-label">${escapeHtml(measurement.parameter)}</span>
+          <span class="stat-label">
+            ${escapeHtml(measurement.label)}
+            ${measurementHelp(measurement, "other")}
+          </span>
           <span class="stat-value">${formatValue(measurement.value)} ${escapeHtml(measurement.unit)}</span>
         </div>`)
       .join("")

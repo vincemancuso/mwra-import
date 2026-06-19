@@ -1,0 +1,24 @@
+# Administrator settings for MWRA Homebrewing Water Profile.
+# Restart the application after changing this file.
+
+# Page containing links to the monthly MWRA water-quality report PDFs.
+mwra_reports_page_url = "https://www.mwra.com/your-water-system/drinking-water-quality/monthly-water-quality-test-results"
+
+# Fields shown in the main "Current MWRA Water Profile" table, in display order.
+# Every other extracted numeric field is placed in the collapsible details menu.
+#
+# Standard calculated fields:
+# calcium, magnesium, sodium, chloride, sulfate, bicarbonate, ph
+#
+# Examples of additional MWRA fields that can be promoted:
+# alkalinity, hardness, chlorine_total, fluoride, iron, manganese, potassium,
+# silica, specific_conductance, total_dissolved_solids, total_organic_carbon
+main_profile_fields = [
+  "calcium",
+  "magnesium",
+  "sodium",
+  "chloride",
+  "sulfate",
+  "bicarbonate",
+  "ph",
+]

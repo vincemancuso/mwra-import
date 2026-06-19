@@ -7,7 +7,6 @@ import httpx
 from app.config import (
     DEFAULT_COLUMN,
     HTTP_TIMEOUT_SECONDS,
-    MWRA_MONTHLY_URL,
     REPORTS_DIR,
     USER_AGENT,
 )
@@ -20,16 +19,19 @@ from app.errors import (
 )
 from app.models import ReportCatalog, ReportLink, ReportMetadata, WaterProfileResponse
 from app.parser import parse_report_pdf_details
+from app.settings import AppSettings
+from app.water_context import build_profile_measurements
 
 
 class WaterProfileService:
     def __init__(
         self,
-        source_url: str = MWRA_MONTHLY_URL,
+        settings: AppSettings,
         reports_dir: Path = REPORTS_DIR,
         client: httpx.AsyncClient | None = None,
     ) -> None:
-        self.source_url = source_url
+        self.settings = settings
+        self.source_url = str(settings.mwra_reports_page_url)
         self.reports_dir = reports_dir
         self._client = client
         self._lock = asyncio.Lock()
@@ -56,7 +58,7 @@ class WaterProfileService:
             raise ReportDiscoveryError(
                 f"Could not fetch the MWRA monthly reports page: {exc}"
             ) from exc
-        reports = find_report_links(response.text)
+        reports = find_report_links(response.text, self.source_url)
         if not reports:
             raise ReportDiscoveryError(
                 "No linked monthly MWRA water-quality PDFs were found. "
@@ -103,6 +105,11 @@ class WaterProfileService:
         pdf_path = await self.cache_pdf(report)
         raw, other_values = await asyncio.to_thread(parse_report_pdf_details, pdf_path)
         brewfather, conversions = convert_measurements(raw)
+        profile_values, hidden_values = build_profile_measurements(
+            brewfather,
+            other_values,
+            self.settings.main_profile_fields,
+        )
         result = (
             WaterProfileResponse(
                 name=f"MWRA Metro-Boston Tap Water - {report.month_year}",
@@ -118,7 +125,8 @@ class WaterProfileService:
                     fetched_at=datetime.now(UTC),
                 ),
                 raw_values=raw,
-                other_values=other_values,
+                profile_values=profile_values,
+                other_values=hidden_values,
                 conversions=conversions,
                 brewfather_values=brewfather,
             ),

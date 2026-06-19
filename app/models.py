@@ -37,6 +37,14 @@ class RawMeasurement(BaseModel):
     source_label: str
 
 
+class ProfileMeasurement(BaseModel):
+    key: str
+    label: str
+    value: float
+    unit: str
+    description: str
+
+
 class Conversion(BaseModel):
     field: str
     source_parameter: str
@@ -75,6 +83,7 @@ class WaterProfileResponse(BaseModel):
     name: str
     report: ReportMetadata
     raw_values: dict[str, RawMeasurement]
-    other_values: list[RawMeasurement] = Field(default_factory=list)
+    profile_values: list[ProfileMeasurement] = Field(default_factory=list)
+    other_values: list[ProfileMeasurement] = Field(default_factory=list)
     conversions: list[Conversion]
     brewfather_values: BrewfatherValues

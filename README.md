@@ -108,6 +108,136 @@ Wachusett System / Metro-Boston / Carroll Water TP Finished Water Tap / Treated
 No database, JavaScript build system, brewing-software account, credentials,
 or API keys are required.
 
+## Administrator configuration
+
+Administrators can change two commonly updated behaviors without editing
+Python or JavaScript. Edit [`app-config.toml`](app-config.toml) in the project
+root—the same directory that contains `README.md` and `pyproject.toml`.
+
+### How to update the configuration
+
+1. Stop the running server with `Ctrl+C`.
+2. Open `app-config.toml` in a plain-text editor.
+3. Change only the value of `mwra_reports_page_url` or the entries inside
+   `main_profile_fields`.
+4. Preserve TOML syntax: URLs and field names need quotation marks, list items
+   need commas, and square brackets must remain around the field list.
+5. Save the file.
+6. Start the server again:
+
+   ```bash
+   uvicorn app.main:app --reload
+   ```
+
+7. Reload the web page and confirm the report list and main profile table look
+   as expected.
+
+On Windows PowerShell, the editing and restart process is the same after
+activating the virtual environment:
+
+```powershell
+uvicorn app.main:app --reload
+```
+
+Configuration changes are loaded when the application starts. Restarting is
+required even when Uvicorn was originally launched with `--reload`.
+
+### Complete configuration example
+
+```toml
+mwra_reports_page_url = "https://www.mwra.com/your-water-system/drinking-water-quality/monthly-water-quality-test-results"
+
+main_profile_fields = [
+  "calcium",
+  "magnesium",
+  "sodium",
+  "chloride",
+  "sulfate",
+  "bicarbonate",
+  "ph",
+]
+```
+
+### Changing the MWRA report-page URL
+
+- `mwra_reports_page_url` is the MWRA page containing links to the monthly
+  report PDFs—not the URL of an individual PDF.
+- If MWRA moves its monthly-results page, replace the URL between the quotation
+  marks and restart the application.
+- Relative PDF links discovered on that page are resolved against this
+  configured URL, and the footer’s MWRA source link is updated automatically.
+
+Example:
+
+```toml
+mwra_reports_page_url = "https://www.example.org/new-monthly-report-page"
+```
+
+### Choosing the main water-profile fields
+
+- `main_profile_fields` controls which values appear in the main water-profile
+  table and their order. All other extracted numeric values move into the
+  collapsible “Other treated-water measurements” section.
+- Field keys are lowercase and use underscores instead of spaces.
+- Reordering the keys reorders the main table. Removing a key moves that value
+  into the collapsible section; adding a supported key promotes it.
+- Standard calculated field keys are `calcium`, `magnesium`, `sodium`,
+  `chloride`, `sulfate`, `bicarbonate`, and `ph`.
+- Additional MWRA fields can also be promoted. Common keys include
+  `alkalinity`, `hardness`, `chlorine_total`, `fluoride`, `iron`, `manganese`,
+  `potassium`, `silica`, `specific_conductance`, `total_dissolved_solids`, and
+  `total_organic_carbon`.
+
+For example, this configuration promotes alkalinity and hardness while moving
+sodium and pH into the collapsible section:
+
+```toml
+main_profile_fields = [
+  "calcium",
+  "magnesium",
+  "alkalinity",
+  "hardness",
+  "chloride",
+  "sulfate",
+  "bicarbonate",
+]
+```
+
+An unknown field key is skipped because no matching measurement exists in the
+report. A field may also be absent from a particular month if MWRA did not
+publish that numeric measurement.
+
+### Configuration errors
+
+The app validates the configuration at startup and reports a clear error for
+missing, malformed, empty, or duplicate settings. If the app will not start
+after an edit:
+
+- check that the URL and every field key still have matching quotation marks;
+- check that list entries are separated by commas;
+- remove duplicate field keys;
+- ensure `main_profile_fields` contains at least one entry;
+- compare the file with the
+  [repository’s default configuration](app-config.toml).
+
+The configuration is intentionally committed to Git so deployments have an
+auditable default. Administrators making environment-specific changes should
+review those edits before pulling or deploying future repository updates.
+
+## Measurement guidance
+
+Every value in both the main table and the collapsible measurements section
+has a tooltip explaining what it measures and its general relevance to
+brewing. These notes are static educational context; they do not assess
+whether the selected month's value is high, low, safe, or appropriate for a
+particular recipe.
+
+The brewing guidance was synthesized primarily from Martin Brungard's
+[Bru'n Water: Water Knowledge](https://www.brunwater.com/water-knowledge),
+including its discussions of mash pH, alkalinity, hardness, major ions,
+undesirable metals, nitrate, and chlorine removal. Always calculate treatment
+for the actual recipe and verify source data against the MWRA PDF.
+
 ## Run on macOS or Linux
 
 Clone the repository:
@@ -233,13 +363,16 @@ Interactive FastAPI documentation is available while the app is running:
 
 ```text
 app/
-  config.py       MWRA URLs, paths, and application settings
+  config.py       Application paths and fixed internal constants
   conversions.py  Unit and bicarbonate calculations
   discovery.py    Latest-report link discovery
   main.py         FastAPI routes
   models.py       Pydantic response models
   parser.py       PDF table and text extraction
+  settings.py     Root TOML configuration loading and validation
   service.py      Download, cache, parse, and response workflow
+  water_context.py Measurement display partitioning and tooltip guidance
+app-config.toml    Administrator-editable source URL and main field list
 static/            Plain CSS and JavaScript
 templates/         Jinja2 HTML template
 tests/             Unit, parser, discovery, and endpoint tests

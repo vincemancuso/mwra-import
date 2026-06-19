@@ -11,14 +11,17 @@ from app.brewfather import (
     build_beerxml,
     build_brewfather_recipe,
 )
-from app.config import APP_NAME, STATIC_DIR, TEMPLATES_DIR
+from app.config import APP_NAME, CONFIG_PATH, STATIC_DIR, TEMPLATES_DIR
 from app.errors import ReportNotFoundError, WaterProfileError
 from app.service import WaterProfileService
+from app.settings import load_settings
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.profile_service = WaterProfileService()
+    settings = load_settings(CONFIG_PATH)
+    app.state.settings = settings
+    app.state.profile_service = WaterProfileService(settings)
     yield
 
 
@@ -53,7 +56,10 @@ async def index(request: Request):
     return templates.TemplateResponse(
         request=request,
         name="index.html",
-        context={"app_name": APP_NAME},
+        context={
+            "app_name": APP_NAME,
+            "mwra_reports_page_url": str(request.app.state.settings.mwra_reports_page_url),
+        },
     )
 
 

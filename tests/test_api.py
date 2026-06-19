@@ -8,6 +8,7 @@ from app.main import app
 from app.models import (
     BrewfatherValues,
     Conversion,
+    ProfileMeasurement,
     RawMeasurement,
     ReportMetadata,
     ReportCatalog,
@@ -40,12 +41,22 @@ class FixtureService:
                 fetched_at=datetime(2026, 5, 1, tzinfo=UTC),
             ),
             raw_values={"calcium": raw},
+            profile_values=[
+                ProfileMeasurement(
+                    key="calcium",
+                    label="Calcium",
+                    value=4.37,
+                    unit="ppm",
+                    description="Calcium brewing context.",
+                )
+            ],
             other_values=[
-                RawMeasurement(
-                    parameter="Hardness",
+                ProfileMeasurement(
+                    key="hardness",
+                    label="Hardness",
                     value=14.4,
                     unit="MG/L",
-                    source_label="fixture",
+                    description="Hardness brewing context.",
                 )
             ],
             conversions=[
@@ -123,7 +134,9 @@ def test_ui_and_api_endpoints():
     assert reports.json()["reports"][1]["month_year"] == "March 2026"
     assert selected.status_code == 200
     assert selected.json()["report"]["report_month"] == "March"
-    assert selected.json()["other_values"][0]["parameter"] == "Hardness"
+    assert selected.json()["profile_values"][0]["key"] == "calcium"
+    assert selected.json()["profile_values"][0]["description"]
+    assert selected.json()["other_values"][0]["label"] == "Hardness"
     assert selected_pdf.status_code == 200
     assert brewfather.status_code == 200
     assert "attachment" in brewfather.headers["content-disposition"]
