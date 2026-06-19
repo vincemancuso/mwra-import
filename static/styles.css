@@ -58,7 +58,7 @@ body::before {
 }
 
 .site-header h1 { margin: 2px 0 0; font-family: Georgia, "Times New Roman", serif; font-size: clamp(1.35rem, 3vw, 2.15rem); letter-spacing: -.025em; }
-.brand-mark { width: 74px; height: 74px; flex: 0 0 auto; filter: drop-shadow(0 8px 16px rgba(55, 6, 22, .28)); }
+.brand-mark { width: 80px; height: 80px; flex: 0 0 auto; object-fit: contain; filter: drop-shadow(0 8px 16px rgba(55, 6, 22, .28)); }
 .club-link { margin-left: auto; color: var(--cream); font-size: .8rem; font-weight: 800; letter-spacing: .08em; text-decoration: none; text-transform: uppercase; opacity: .86; }
 .club-link:hover { opacity: 1; text-decoration: underline; }
 .eyebrow { margin: 0; color: var(--cranberry); font-size: .72rem; font-weight: 850; letter-spacing: .12em; text-transform: uppercase; }
@@ -144,7 +144,7 @@ footer { padding: 20px 0 38px; color: var(--muted); font-size: .78rem; text-alig
   .site-header, main, footer { width: min(100% - 24px, 1120px); }
   .site-header { padding-top: 24px; }
   .site-header { margin-top: 10px; padding: 18px; }
-  .brand-mark { width: 58px; height: 58px; }
+  .brand-mark { width: 68px; height: 68px; }
   .club-link { display: none; }
   .hero-card { align-items: stretch; flex-direction: column; }
   .hero-actions .button { flex: 1; text-align: center; }

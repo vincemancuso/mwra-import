@@ -1,9 +1,31 @@
-# MWRA Brewfather Water Profile
+<p align="center">
+  <img src="static/wort-water-mark.png" alt="Boston Wort Processors hop and water emblem" width="140">
+</p>
+
+<h1 align="center">MWRA Brewfather Water Profile</h1>
+
+<p align="center">
+  <strong>Boston Wort Processors Present</strong><br>
+  A brewing-water utility from members of Boston's homebrew community.
+</p>
+
+<p align="center">
+  <a href="http://www.wort.org"><strong>Learn more about the Boston Wort Processors at wort.org</strong></a>
+</p>
 
 A small local web app that finds the latest
 [MWRA monthly water-quality report](https://www.mwra.com/your-water-system/drinking-water-quality/monthly-water-quality-test-results),
 extracts the Metro-Boston treated-water mineral analysis, and formats the
 results for manual entry into Brewfather.
+
+## About the Boston Wort Processors
+
+The [Boston Wort Processors](http://www.wort.org) are a Boston-area homebrew
+club founded in 1984. The club brings brewers together through meetings,
+education, competitions, shared resources, and community events.
+
+Visit [wort.org](http://www.wort.org) to learn about the club, membership,
+upcoming events, educational resources, and homebrewing activities.
 
 > [!IMPORTANT]
 > **This project is vibecoded.** The initial application, parser, interface,
