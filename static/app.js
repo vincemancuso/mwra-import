@@ -175,7 +175,7 @@ async function initialize() {
 document.querySelector("#copy-button").addEventListener("click", async () => {
   if (!currentProfile) return;
   const copied = await writeClipboard(copyText(currentProfile));
-  showToast(copied ? "Brewfather values copied" : "Clipboard access was unavailable");
+  showToast(copied ? "Water profile values copied" : "Clipboard access was unavailable");
 });
 
 document.querySelector("#retry-button").addEventListener("click", initialize);

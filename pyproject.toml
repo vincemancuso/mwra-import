@@ -3,9 +3,9 @@ requires = ["setuptools>=75"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mwra-brewfather-water-profile"
+name = "mwra-homebrewing-water-profile"
 version = "0.1.0"
-description = "Convert the latest MWRA Metro-Boston water report into Brewfather manual-entry values."
+description = "Convert MWRA Metro-Boston water reports into practical homebrewing water profiles."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

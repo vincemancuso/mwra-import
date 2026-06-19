@@ -1,6 +1,6 @@
 from pathlib import Path
 
-APP_NAME = "MWRA Brewfather Water Profile"
+APP_NAME = "MWRA Homebrewing Water Profile"
 MWRA_MONTHLY_URL = (
     "https://www.mwra.com/your-water-system/drinking-water-quality/"
     "monthly-water-quality-test-results"

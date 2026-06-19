@@ -2,7 +2,7 @@
   <img src="static/wort-water-mark.png" alt="Boston Wort Processors hop and water emblem" width="140">
 </p>
 
-<h1 align="center">MWRA Brewfather Water Profile</h1>
+<h1 align="center">MWRA Homebrewing Water Profile</h1>
 
 <p align="center">
   <strong>Boston Wort Processors Present</strong><br>
@@ -16,7 +16,12 @@
 A small local web app that finds the latest
 [MWRA monthly water-quality report](https://www.mwra.com/your-water-system/drinking-water-quality/monthly-water-quality-test-results),
 extracts the Metro-Boston treated-water mineral analysis, and formats the
-results for manual entry into Brewfather.
+results as a practical homebrewing water profile. Use the displayed values
+with the brewing water calculator or recipe software of your choice.
+
+Brewfather is supported as an optional destination through recipe JSON and
+BeerXML downloads, but this is not a Brewfather-specific tool and does not
+require a Brewfather account.
 
 > [!IMPORTANT]
 > **This project is vibecoded.** The initial application, parser, interface,
@@ -35,7 +40,6 @@ education, competitions, shared resources, and community events.
 Visit [wort.org](http://www.wort.org) to learn about the club, membership,
 upcoming events, educational resources, and homebrewing activities.
 
-
 ## What it does
 
 - Finds the newest linked monthly report on the MWRA website.
@@ -43,18 +47,26 @@ upcoming events, educational resources, and homebrewing activities.
   between them, defaulting to the newest one.
 - Downloads and caches the source PDF in `data/reports/`.
 - Extracts the `Carroll Water TP Fin. Water Tap (Treated)` values.
-- Converts MWRA units into Brewfather-friendly values.
+- Converts MWRA units into standard brewing-water values in ppm.
 - Displays calcium, magnesium, sodium, chloride, sulfate, bicarbonate, and pH.
 - Expands to show the other numeric Carroll finished-water measurements found
   in the same MWRA report.
 - Copies a ready-to-paste text profile to the clipboard.
-- Generates a Brewfather recipe JSON using the selected month's water profile.
-- Generates a matching BeerXML recipe from the same sanitized temporary batch.
 - Shows the raw MWRA measurements and conversion formulas.
 - Embeds the original cached PDF for easy verification.
 
-It does **not** connect to the Brewfather API, modify a Brewfather account, or
-create reusable profiles in Brewfather.
+## Optional recipe-software exports
+
+The displayed water profile can be entered manually into any brewing water
+calculator that accepts the listed ions and pH. For convenience, the app also
+offers two optional recipe exports:
+
+- a Brewfather recipe JSON containing the selected month's water profile;
+- a matching BeerXML recipe generated from the same sanitized temporary batch.
+
+These are compatibility features, not the app's primary purpose. The app does
+**not** connect to the Brewfather API, modify a Brewfather account, or create
+reusable profiles in Brewfather.
 
 The Brewfather download is based on a blank recipe export supplied during
 development. It names the recipe `Dummy MWRA <Month YYYY> Recipe`, leaves
@@ -66,8 +78,7 @@ uses an empty `BREWER`, and includes a standard BeerXML `WATERS/WATER` block.
 It follows the BeerXML 1.0 required recipe record sets and data types.
 
 Both export buttons include an in-app explanation of the temporary-recipe
-workaround and why the formats cannot directly install a reusable Brewfather
-water profile.
+workaround and its limitations.
 
 The interface uses an original hop-and-water emblem and a cranberry, cream,
 and olive palette inspired by the Boston Wort Processors' public club banner.
@@ -94,8 +105,8 @@ Wachusett System / Metro-Boston / Carroll Water TP Finished Water Tap / Treated
 - Internet access when fetching a report for the first time
 - A modern web browser
 
-No database, JavaScript build system, Brewfather credentials, or API keys are
-required.
+No database, JavaScript build system, brewing-software account, credentials,
+or API keys are required.
 
 ## Run on macOS or Linux
 
@@ -257,8 +268,8 @@ from `data/reports/`. The next request will download it again.
 - Values are snapshots from MWRA's monthly report and may not represent water
   at a particular home, date, or tap.
 - The app is intended for local personal use, not unattended public hosting.
-- Brewfather's recipe JSON format may evolve. The generated recipe is based on
-  the supplied blank export schema and should be checked after import.
+- Optional third-party export formats may evolve. Generated recipe files
+  should be checked after import.
 
 When required values cannot be extracted, the app returns a descriptive error
 instead of silently inventing or substituting values.
@@ -294,10 +305,10 @@ Then open <http://127.0.0.1:8001>.
 
 ## Data and affiliation disclaimer
 
-MWRA and Brewfather are third-party names used only to identify the public data
-source and intended manual-entry destination. This project is not affiliated
-with, endorsed by, or maintained by the Massachusetts Water Resources
-Authority or Brewfather.
+MWRA, Brewfather, and other third-party names are used only to identify the
+public data source and compatible software or formats. This project is not
+affiliated with, endorsed by, or maintained by the Massachusetts Water
+Resources Authority, Brewfather, or any brewing-software vendor.
 
 Always verify extracted values against the embedded original PDF before using
 them. Brewing decisions remain the user's responsibility.

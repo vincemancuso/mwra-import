@@ -112,7 +112,7 @@ def test_ui_and_api_endpoints():
         pdf = client.get("/api/latest/pdf")
 
     assert page.status_code == 200
-    assert "MWRA Brewfather Water Profile" in page.text
+    assert "MWRA Homebrewing Water Profile" in page.text
     assert "Boston Wort Processors Present:" in page.text
     assert 'id="report-select"' in page.text
     assert "Other treated-water measurements" in page.text

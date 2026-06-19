@@ -1,1 +1,1 @@
-"""MWRA Brewfather Water Profile."""
+"""MWRA Homebrewing Water Profile."""
