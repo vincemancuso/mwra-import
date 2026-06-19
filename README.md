@@ -52,6 +52,8 @@ upcoming events, educational resources, and homebrewing activities.
 - Expands to show the other numeric Carroll finished-water measurements found
   in the same MWRA report.
 - Copies a ready-to-paste text profile to the clipboard.
+- Compares each main profile value with the previous linked report using
+  up, down, or steady indicators with exact prior values on hover or focus.
 - Shows the raw MWRA measurements and conversion formulas.
 - Embeds the original cached PDF for easy verification.
 

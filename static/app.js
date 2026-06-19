@@ -5,6 +5,8 @@ const reportSelect = document.querySelector("#report-select");
 const toast = document.querySelector("#toast");
 let currentProfile = null;
 let latestReportKey = null;
+let reportCatalog = [];
+let profileRequestId = 0;
 
 const formatValue = (value) => Number(value).toFixed(2).replace(/\.?0+$/, "");
 const titleCase = (value) => value.charAt(0).toUpperCase() + value.slice(1);
@@ -34,11 +36,82 @@ function measurementHelp(measurement, idPrefix) {
   const tooltipId = `${idPrefix}-${measurement.key.replaceAll("_", "-")}-tip`;
   return `
     <span class="measurement-help">
-      <button class="measurement-info" type="button"
+      <button class="measurement-label-trigger" type="button"
         aria-label="About ${escapeHtml(measurement.label)}"
-        aria-describedby="${tooltipId}">?</button>
+        aria-describedby="${tooltipId}">${escapeHtml(measurement.label)}</button>
       <span class="measurement-tip-content" id="${tooltipId}" role="tooltip">
-        ${escapeHtml(measurement.description)}
+        <strong>${escapeHtml(measurement.label)}</strong>
+        <span>${escapeHtml(measurement.description)}</span>
+      </span>
+    </span>`;
+}
+
+function comparisonValue(profile, key) {
+  if (!profile) return null;
+  return [...(profile.profile_values || []), ...(profile.other_values || [])]
+    .find((measurement) => measurement.key === key) || null;
+}
+
+function trendIndicator(measurement, previousProfile) {
+  const previous = comparisonValue(previousProfile, measurement.key);
+  const tooltipId = `trend-${measurement.key.replaceAll("_", "-")}-tip`;
+  const currentValue = Number(formatValue(measurement.value));
+
+  let symbol = "—";
+  let state = "steady";
+  let label = `${measurement.label} is steady`;
+  let previousMonth = "Previous report";
+  let previousValueText = "Not available";
+  let changeText = "No comparison available";
+
+  if (!previousProfile) {
+    state = "unavailable";
+    label = `No previous report comparison for ${measurement.label}`;
+    previousMonth = "Earlier report";
+    changeText = "No earlier linked MWRA report";
+  } else if (!previous) {
+    state = "unavailable";
+    label = `No previous value for ${measurement.label}`;
+    previousMonth = `${previousProfile.report.report_month} ${previousProfile.report.report_year}`;
+    changeText = "Measurement not reported";
+  } else {
+    const previousValue = Number(formatValue(previous.value));
+    const delta = Number((currentValue - previousValue).toFixed(2));
+    const unit = measurement.unit ? ` ${measurement.unit}` : "";
+
+    previousMonth = `${previousProfile.report.report_month} ${previousProfile.report.report_year}`;
+    previousValueText = `${formatValue(previous.value)}${unit}`;
+    changeText = `${delta > 0 ? "+" : ""}${formatValue(delta)}${unit}`;
+    if (delta > 0) {
+      symbol = "▲";
+      state = "up";
+      label = `${measurement.label} increased since the previous report`;
+    } else if (delta < 0) {
+      symbol = "▼";
+      state = "down";
+      label = `${measurement.label} decreased since the previous report`;
+    }
+  }
+
+  return `
+    <span class="trend-help">
+      <button class="trend-indicator trend-${state}" type="button"
+        aria-label="${escapeHtml(label)}"
+        aria-describedby="${tooltipId}">${symbol}</button>
+      <span class="trend-tip-content" id="${tooltipId}" role="tooltip">
+        <strong>${escapeHtml(measurement.label)} comparison</strong>
+        <span class="trend-tip-row">
+          <span>Previous report</span>
+          <b>${escapeHtml(previousMonth)}</b>
+        </span>
+        <span class="trend-tip-row">
+          <span>Previous value</span>
+          <b>${escapeHtml(previousValueText)}</b>
+        </span>
+        <span class="trend-tip-row">
+          <span>Change</span>
+          <b>${escapeHtml(changeText)}</b>
+        </span>
       </span>
     </span>`;
 }
@@ -64,7 +137,7 @@ async function writeClipboard(text) {
   return copied;
 }
 
-function renderProfile(profile) {
+function renderProfile(profile, previousProfile = null) {
   currentProfile = profile;
   const reportKey = `${profile.report.report_year}-${String(profile.report.report_month_number || "").padStart(2, "0")}`;
   reportSelect.value = reportKey;
@@ -78,11 +151,11 @@ function renderProfile(profile) {
     .map((measurement) => `
       <tr>
         <td>
-          <span class="measurement-label">${escapeHtml(measurement.label)}</span>
           ${measurementHelp(measurement, "main")}
         </td>
         <td>${formatValue(measurement.value)}</td>
         <td>${escapeHtml(measurement.unit) || "—"}</td>
+        <td class="trend-cell">${trendIndicator(measurement, previousProfile)}</td>
       </tr>`)
     .join("");
 
@@ -103,7 +176,6 @@ function renderProfile(profile) {
       .map((measurement) => `
         <div class="stat-item">
           <span class="stat-label">
-            ${escapeHtml(measurement.label)}
             ${measurementHelp(measurement, "other")}
           </span>
           <span class="stat-value">${formatValue(measurement.value)} ${escapeHtml(measurement.unit)}</span>
@@ -150,14 +222,29 @@ async function fetchJson(url) {
 }
 
 async function loadProfile(year, month, initial = false) {
+  const requestId = ++profileRequestId;
   loadingCard.hidden = false;
   errorCard.hidden = true;
   reportSelect.disabled = true;
   if (initial) profileContent.hidden = true;
   try {
-    const payload = await fetchJson(`/api/reports/${year}/${month}`);
-    renderProfile(payload);
+    const selectedIndex = reportCatalog.findIndex(
+      (report) => report.year === year && report.month === month
+    );
+    const previousReport = selectedIndex >= 0
+      ? reportCatalog[selectedIndex + 1]
+      : null;
+    const [payload, previousProfile] = await Promise.all([
+      fetchJson(`/api/reports/${year}/${month}`),
+      previousReport
+        ? fetchJson(`/api/reports/${previousReport.year}/${previousReport.month}`)
+          .catch(() => null)
+        : Promise.resolve(null),
+    ]);
+    if (requestId !== profileRequestId) return;
+    renderProfile(payload, previousProfile);
   } catch (error) {
+    if (requestId !== profileRequestId) return;
     renderError(error instanceof Error ? { message: error.message } : error);
   }
 }
@@ -165,6 +252,7 @@ async function loadProfile(year, month, initial = false) {
 async function initialize() {
   try {
     const catalog = await fetchJson("/api/reports");
+    reportCatalog = catalog.reports;
     latestReportKey = `${catalog.latest.year}-${String(catalog.latest.month).padStart(2, "0")}`;
     reportSelect.innerHTML = catalog.reports
       .map((report) => {
