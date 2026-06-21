@@ -70,21 +70,9 @@ These are compatibility features, not the app's primary purpose. The app does
 **not** connect to the Brewfather API, modify a Brewfather account, or create
 reusable profiles in Brewfather.
 
-The Brewfather download is based on a blank recipe export supplied during
-development. It names the recipe `Dummy MWRA <Month YYYY> Recipe`, leaves
-`author` blank, leaves `tags` unset, and fills the recipe's source, mash,
-sparge, and total water blocks with the selected MWRA profile.
-
-The BeerXML download is generated from that same in-memory temporary recipe,
-uses an empty `BREWER`, and includes a standard BeerXML `WATERS/WATER` block.
-It follows the BeerXML 1.0 required recipe record sets and data types.
-
-Both export buttons include an in-app explanation of the temporary-recipe
-workaround and its limitations.
-
-The interface uses an original hop-and-water emblem and a cranberry, cream,
-and olive palette inspired by the Boston Wort Processors' public club banner.
-It does not reproduce the club's official logo.
+The Brewfather download is  a blank recipe export with dummy data, that can then
+be altered by the author to the recipe they are planning to brew. The BeerXML follows
+the same process, but based on the BeerXML 1.0 standards.
 
 ## Conversion rules
 
