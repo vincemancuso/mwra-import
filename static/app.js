@@ -42,6 +42,11 @@ const escapeHtml = (value) => String(value)
 const historyPointKey = (point) =>
   `${point.report_year}-${String(point.report_month_number).padStart(2, "0")}`;
 
+function currentReportPointKey() {
+  if (!currentProfile) return null;
+  return `${currentProfile.report.report_year}-${String(currentProfile.report.report_month_number).padStart(2, "0")}`;
+}
+
 function showToast(message) {
   toast.textContent = message;
   toast.classList.add("visible");
@@ -452,6 +457,8 @@ function expandedChart(series, index) {
   const height = 280;
   const padding = { top: 22, right: 82, bottom: 52, left: 76 };
   const { points, yFor } = chartPath(series, scale, width, height, padding);
+  const selectedKey = currentReportPointKey();
+  const selectedPoint = points.find((point) => historyPointKey(point) === selectedKey);
   const path = points
     .map((point, pointIndex) => `${pointIndex === 0 ? "M" : "L"} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`)
     .join(" ");
@@ -464,6 +471,16 @@ function expandedChart(series, index) {
     .join("");
   const targetBand = scale.targetMin !== null && scale.targetMax !== null
     ? `<rect class="chart-target-band" x="${padding.left}" y="${yFor(scale.targetMax)}" width="${width - padding.left - padding.right}" height="${Math.max(2, yFor(scale.targetMin) - yFor(scale.targetMax))}"></rect>`
+    : "";
+  const selectedMarker = selectedPoint
+    ? `
+      <line class="chart-selected-line" x1="${selectedPoint.x}" y1="${padding.top}" x2="${selectedPoint.x}" y2="${height - padding.bottom}"></line>`
+    : "";
+  const selectedPointMarker = selectedPoint
+    ? `
+      <g class="chart-selected-point" style="--symbol-color: ${historyColor(index)}">
+        ${pointSymbolPath(historyShape(index), selectedPoint.x, selectedPoint.y, 8)}
+      </g>`
     : "";
   const pointMarks = points
     .map((point) => `
@@ -494,11 +511,13 @@ function expandedChart(series, index) {
         <rect class="chart-bg" x="0" y="0" width="${width}" height="${height}" rx="14"></rect>
         ${targetBand}
         ${gridLines}
+        ${selectedMarker}
         <line class="chart-axis" x1="${padding.left}" y1="${height - padding.bottom}" x2="${width - padding.right}" y2="${height - padding.bottom}"></line>
         <line class="chart-axis" x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${height - padding.bottom}"></line>
         ${xLabels}
         <path class="chart-line" d="${path}" stroke="${historyColor(index)}"></path>
         ${pointMarks}
+        ${selectedPointMarker}
       </svg>
     </div>`;
 }
@@ -522,7 +541,7 @@ function historyContext(measurement, historyMatch) {
           <span class="history-card-symbol">${historyLegendSymbol(index)}</span>
           <div>
             <strong>${escapeHtml(series.label)} historical context</strong>
-            <p>Fixed brewing-reference scale, not a data-fitted axis.</p>
+            <p>Fixed brewing-reference scale, not a data-fitted axis. The vertical marker shows the report month currently selected above.</p>
           </div>
         </div>
         <div class="history-summary">

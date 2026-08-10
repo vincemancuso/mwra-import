@@ -50,6 +50,11 @@ def test_history_chart_ui_is_present():
     assert "history-chart" in script
     assert "historyContext" in script
     assert "rangeIndicator" in script
+    assert "currentReportPointKey" in script
+    assert "selectedPoint" in script
+    assert "chart-selected-line" in script
+    assert ".chart-selected-line" in styles
+    assert ".chart-selected-point" in styles
     assert "data-history-toggle" in script
     assert "expandedHistoryRows" in script
     assert "Current MWRA Water Profile" in template
