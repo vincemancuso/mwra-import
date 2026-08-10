@@ -49,9 +49,9 @@ upcoming events, educational resources, and homebrewing activities.
 - Extracts the `Carroll Water TP Fin. Water Tap (Treated)` values.
 - Converts MWRA units into standard brewing-water values in ppm.
 - Displays calcium, magnesium, sodium, chloride, sulfate, bicarbonate, and pH.
-- Charts the main brewing-water values across every linked monthly report,
-  with checkboxes to show or hide each value on a shared relative-change graph
-  that rescales when selections change.
+- Adds brewing-reference status indicators to the main profile table and lets
+  each value expand into a historical single-value chart on a fixed
+  brewing-reference scale.
 - Expands to show the other numeric Carroll finished-water measurements found
   in the same MWRA report.
 - Copies a ready-to-paste text profile to the clipboard.
@@ -60,18 +60,42 @@ upcoming events, educational resources, and homebrewing activities.
 - Shows the raw MWRA measurements and conversion formulas.
 - Embeds the original cached PDF for easy verification.
 
+## Historical context charts
+
+The historical context rows are intentionally conservative. They do **not**
+stretch each chart to the minimum and maximum MWRA values, because that can
+make stable municipal water look more volatile than it is. Instead, each
+brewing value uses a fixed, broad brewing-reference scale:
+
+| Field | Chart scale |
+| --- | --- |
+| Calcium | 0–200 ppm |
+| Magnesium | 0–50 ppm |
+| Sodium | 0–200 ppm |
+| Chloride | 0–250 ppm |
+| Sulfate | 0–400 ppm |
+| Bicarbonate | 0–250 ppm |
+| pH | 5.0–10.5 |
+
+The main table shows whether the current value is below, within, or above the
+broad brewing reference band. Expanding a value row shows the full historical
+chart, historical MWRA range, fixed chart scale, and a matching green swatch for
+the chart's reference band. These bands are broad guidance ranges, not recipe
+targets. Exact targets still depend on beer style, grist, sparge process, and
+measured mash pH.
+
 ## Optional recipe-software exports
 
 The displayed water profile can be entered manually into any brewing water
 calculator that accepts the listed ions and pH. For convenience, the app also
-offers two optional recipe exports:
+offers optional recipe exports:
 
 - a Brewfather recipe JSON containing the selected month's water profile;
 - a matching BeerXML recipe generated from the same sanitized temporary batch.
 
 These are compatibility features, not the app's primary purpose. The app does
-**not** connect to the Brewfather API, modify a Brewfather account, or create
-reusable profiles in Brewfather.
+**not** connect to brewing-software APIs, modify external accounts, or create
+reusable profiles in those services.
 
 The Brewfather download is  a blank recipe export with dummy data, that can then
 be altered by the author to the recipe they are planning to brew. The BeerXML follows

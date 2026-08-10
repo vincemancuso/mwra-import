@@ -4,11 +4,12 @@ const profileContent = document.querySelector("#profile-content");
 const reportSelect = document.querySelector("#report-select");
 const toast = document.querySelector("#toast");
 let currentProfile = null;
+let currentPreviousProfile = null;
 let latestReportKey = null;
 let reportCatalog = [];
 let profileRequestId = 0;
 let historyData = null;
-let activeHistoryKeys = new Set();
+const expandedHistoryRows = new Set();
 
 const chartColors = [
   "#a7193f",
@@ -20,6 +21,15 @@ const chartColors = [
   "#6f5aa7",
 ];
 const chartShapes = ["circle", "square", "diamond", "triangle", "pentagon", "hexagon", "cross"];
+const brewingScales = {
+  calcium: { min: 0, max: 200, targetMin: 50, targetMax: 150, note: "Palmer/AHA commonly cite 50–150/200 ppm as a useful brewing calcium range." },
+  magnesium: { min: 0, max: 50, targetMin: 10, targetMax: 30, note: "Common brewing guidance puts magnesium around 10–30 ppm, with high levels becoming bitter/astringent." },
+  sodium: { min: 0, max: 200, targetMin: 0, targetMax: 100, note: "Sodium can round malt character at modest levels; high levels can taste salty or harsh." },
+  chloride: { min: 0, max: 250, targetMin: 50, targetMax: 150, note: "Chloride often supports fullness and malt roundness; very high levels can become excessive." },
+  sulfate: { min: 0, max: 400, targetMin: 50, targetMax: 250, note: "Sulfate emphasizes dryness and hop bitterness; very high levels can seem harsh." },
+  bicarbonate: { min: 0, max: 250, targetMin: 0, targetMax: 120, note: "Bicarbonate/alkalinity is grist-dependent; lower values generally suit pale beers, higher values can suit darker acidic grists." },
+  ph: { min: 5, max: 10.5, targetMin: 6.5, targetMax: 8.5, note: "Source-water pH is less important than alkalinity and mash pH; the band is a drinking-water-style reference, not a mash target." },
+};
 
 const formatValue = (value) => Number(value).toFixed(2).replace(/\.?0+$/, "");
 const titleCase = (value) => value.charAt(0).toUpperCase() + value.slice(1);
@@ -131,6 +141,70 @@ function trendIndicator(measurement, previousProfile) {
     </span>`;
 }
 
+function historySeriesFor(key) {
+  if (!historyData?.series) return null;
+  const index = historyData.series.findIndex((series) => series.key === key);
+  if (index < 0) return null;
+  return { series: historyData.series[index], index };
+}
+
+function rangeIndicator(measurement) {
+  const historyMatch = historySeriesFor(measurement.key);
+  const scale = fixedScaleFor(historyMatch?.series || {
+    key: measurement.key,
+    max_value: measurement.value,
+  });
+  const tooltipId = `range-${measurement.key.replaceAll("_", "-")}-tip`;
+  let symbol = "—";
+  let state = "unavailable";
+  let label = `No brewing reference range for ${measurement.label}`;
+  let rangeText = "Not configured";
+  let currentText = formatChartValue(measurement.value, measurement.unit);
+  let meaningText = "No broad brewing reference band is configured for this value.";
+
+  if (scale.targetMin !== null && scale.targetMax !== null) {
+    rangeText = `${formatChartValue(scale.targetMin, measurement.unit)}–${formatChartValue(scale.targetMax, measurement.unit)}`;
+    if (measurement.value < scale.targetMin) {
+      symbol = "▼";
+      state = "outside";
+      label = `${measurement.label} is below the broad brewing reference range`;
+      meaningText = "Below the broad brewing reference band.";
+    } else if (measurement.value > scale.targetMax) {
+      symbol = "▲";
+      state = "outside";
+      label = `${measurement.label} is above the broad brewing reference range`;
+      meaningText = "Above the broad brewing reference band.";
+    } else {
+      symbol = "—";
+      state = "within";
+      label = `${measurement.label} is within the broad brewing reference range`;
+      meaningText = "Within the broad brewing reference band.";
+    }
+  }
+
+  return `
+    <span class="trend-help">
+      <button class="trend-indicator range-${state}" type="button"
+        aria-label="${escapeHtml(label)}"
+        aria-describedby="${tooltipId}">${symbol}</button>
+      <span class="trend-tip-content" id="${tooltipId}" role="tooltip">
+        <strong>${escapeHtml(measurement.label)} brewing range</strong>
+        <span class="trend-tip-row">
+          <span>Current value</span>
+          <b>${escapeHtml(currentText)}</b>
+        </span>
+        <span class="trend-tip-row">
+          <span>Reference band</span>
+          <b>${escapeHtml(rangeText)}</b>
+        </span>
+        <span class="trend-tip-row">
+          <span>Status</span>
+          <b>${escapeHtml(meaningText)}</b>
+        </span>
+      </span>
+    </span>`;
+}
+
 async function writeClipboard(text) {
   if (navigator.clipboard?.writeText) {
     try {
@@ -154,6 +228,7 @@ async function writeClipboard(text) {
 
 function renderProfile(profile, previousProfile = null) {
   currentProfile = profile;
+  currentPreviousProfile = previousProfile;
   const reportKey = `${profile.report.report_year}-${String(profile.report.report_month_number || "").padStart(2, "0")}`;
   reportSelect.value = reportKey;
   document.querySelector("#profile-name").textContent = profile.name;
@@ -163,15 +238,39 @@ function renderProfile(profile, previousProfile = null) {
     `Selected MWRA column: ${profile.report.selected_column}`;
 
   document.querySelector("#profile-table").innerHTML = profile.profile_values
-    .map((measurement) => `
-      <tr>
-        <td>
-          ${measurementHelp(measurement, "main")}
-        </td>
-        <td>${formatValue(measurement.value)}</td>
-        <td>${escapeHtml(measurement.unit) || "—"}</td>
-        <td class="trend-cell">${trendIndicator(measurement, previousProfile)}</td>
-      </tr>`)
+    .map((measurement) => {
+      const isExpanded = expandedHistoryRows.has(measurement.key);
+      const historyMatch = historySeriesFor(measurement.key);
+      return `
+        <tr class="profile-value-row${isExpanded ? " is-expanded" : ""}">
+          <td class="history-toggle-cell">
+            <button class="history-toggle-button" type="button"
+              data-history-toggle="${escapeHtml(measurement.key)}"
+              aria-label="${escapeHtml(`${isExpanded ? "Hide" : "Show"} historical context for ${measurement.label}`)}"
+              aria-expanded="${isExpanded ? "true" : "false"}"
+              aria-controls="history-row-${escapeHtml(measurement.key)}">
+              <span aria-hidden="true"></span>
+            </button>
+          </td>
+          <td>
+            ${measurementHelp(measurement, "main")}
+          </td>
+          <td>
+            <button class="value-copy-button" type="button"
+              data-copy-value="${escapeHtml(formatValue(measurement.value))}"
+              data-copy-label="${escapeHtml(measurement.label)}"
+              aria-label="${escapeHtml(`Copy ${measurement.label} value`)}">
+              ${formatValue(measurement.value)}
+            </button>
+          </td>
+          <td>${escapeHtml(measurement.unit) || "—"}</td>
+          <td class="trend-cell">${rangeIndicator(measurement)}</td>
+          <td class="trend-cell">${trendIndicator(measurement, previousProfile)}</td>
+        </tr>
+        <tr class="history-context-row" id="history-row-${escapeHtml(measurement.key)}"${isExpanded ? "" : " hidden"}>
+          <td colspan="6">${historyContext(measurement, historyMatch)}</td>
+        </tr>`;
+    })
     .join("");
 
   document.querySelector("#conversion-table").innerHTML = profile.conversions
@@ -238,11 +337,6 @@ async function fetchJson(url) {
 
 function formatChartValue(value, unit = "") {
   return `${formatValue(value)}${unit ? ` ${unit}` : ""}`;
-}
-
-function formatPercent(value) {
-  const percent = value * 100;
-  return `${percent > 0 ? "+" : ""}${formatValue(percent)}%`;
 }
 
 function historyColor(index) {
@@ -322,194 +416,133 @@ function historyLegendSymbol(index) {
     </svg>`;
 }
 
-function renderHistoryControls() {
-  const controls = document.querySelector("#history-controls");
-  controls.innerHTML = historyData.series
-    .map((series, index) => {
-      const checked = activeHistoryKeys.has(series.key) ? " checked" : "";
-      return `
-        <label class="history-toggle">
-          <input type="checkbox" value="${escapeHtml(series.key)}"${checked}>
-          ${historyLegendSymbol(index)}
-          <span>
-            <strong>${escapeHtml(series.label)}</strong>
-            <small>${formatChartValue(series.min_value, series.unit)} → ${formatChartValue(series.max_value, series.unit)}</small>
-          </span>
-        </label>`;
-    })
-    .join("");
-
-  controls.querySelectorAll("input").forEach((input) => {
-    input.addEventListener("change", () => {
-      if (input.checked) {
-        activeHistoryKeys.add(input.value);
-      } else {
-        activeHistoryKeys.delete(input.value);
-      }
-      renderHistoryChart();
-    });
-  });
+function fixedScaleFor(series) {
+  return brewingScales[series.key] || {
+    min: 0,
+    max: Math.max(1, Math.ceil(series.max_value * 1.25)),
+    targetMin: null,
+    targetMax: null,
+    note: "This field uses a fallback fixed scale because no brewing-reference scale is configured.",
+  };
 }
 
-function renderHistoryChart() {
-  const svg = document.querySelector("#history-chart");
-  if (!historyData?.series?.length) return;
-
-  const visibleSeries = historyData.series
-    .map((series, index) => ({
-      ...series,
-      color: historyColor(index),
-      shape: historyShape(index),
-    }))
-    .filter((series) => activeHistoryKeys.has(series.key));
-
-  const width = 900;
-  const height = 360;
-  const padding = { top: 26, right: 92, bottom: 58, left: 104 };
+function chartPath(series, scale, width, height, padding) {
   const plotWidth = width - padding.left - padding.right;
   const plotHeight = height - padding.top - padding.bottom;
-  const allPoints = historyData.series.flatMap((series) => series.points);
-  const monthLabels = [...new Map(allPoints.map((point) => [historyPointKey(point), point])).values()];
-  const xFor = (point) => {
-    const index = monthLabels.findIndex((label) => historyPointKey(label) === historyPointKey(point));
-    return padding.left + (monthLabels.length <= 1 ? plotWidth / 2 : (index / (monthLabels.length - 1)) * plotWidth);
+  const valueRange = scale.max - scale.min || 1;
+  const xFor = (pointIndex) =>
+    padding.left + (series.points.length <= 1 ? plotWidth / 2 : (pointIndex / (series.points.length - 1)) * plotWidth);
+  const yFor = (value) => {
+    const clamped = Math.min(scale.max, Math.max(scale.min, value));
+    return padding.top + (1 - ((clamped - scale.min) / valueRange)) * plotHeight;
   };
-  const labelEvery = Math.max(1, Math.ceil(monthLabels.length / 7));
-  const plottedSeries = visibleSeries.map((series) => {
-    const baseline = series.points[0]?.value || 0;
-    return {
-      ...series,
-      baseline,
-      points: series.points.map((point) => ({
-        ...point,
-        relativeChange: baseline === 0
-          ? point.value - baseline
-          : (point.value - baseline) / Math.abs(baseline),
-      })),
-    };
-  });
-  const relativeValues = plottedSeries.flatMap((series) =>
-    series.points.map((point) => point.relativeChange)
-  );
-  const maxAbsChange = Math.max(
-    0.1,
-    ...relativeValues.map((value) => Math.abs(value))
-  ) * 1.08;
-  const yFor = (relativeChange) =>
-    padding.top + ((maxAbsChange - relativeChange) / (maxAbsChange * 2)) * plotHeight;
+  return {
+    points: series.points.map((point, index) => ({
+      ...point,
+      x: xFor(index),
+      y: yFor(point.value),
+    })),
+    yFor,
+  };
+}
 
-  const gridLines = [maxAbsChange, maxAbsChange / 2, 0, -maxAbsChange / 2, -maxAbsChange]
-    .map((tick) => {
-      const y = yFor(tick);
-      const label = tick === 0 ? "Baseline" : formatPercent(tick);
-      return `
-        <line class="chart-grid" x1="${padding.left}" y1="${y}" x2="${width - padding.right}" y2="${y}"></line>
-        <text class="chart-y-label" x="${padding.left - 10}" y="${y + 4}">${label}</text>`;
-    })
+function expandedChart(series, index) {
+  const scale = fixedScaleFor(series);
+  const width = 820;
+  const height = 280;
+  const padding = { top: 22, right: 82, bottom: 52, left: 76 };
+  const { points, yFor } = chartPath(series, scale, width, height, padding);
+  const path = points
+    .map((point, pointIndex) => `${pointIndex === 0 ? "M" : "L"} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`)
+    .join(" ");
+  const xLabelEvery = Math.max(1, Math.ceil(points.length / 6));
+  const valueTicks = [scale.max, (scale.max + scale.min) / 2, scale.min];
+  const gridLines = valueTicks
+    .map((tick) => `
+      <line class="chart-grid" x1="${padding.left}" y1="${yFor(tick)}" x2="${width - padding.right}" y2="${yFor(tick)}"></line>
+      <text class="chart-y-label" x="${padding.left - 10}" y="${yFor(tick) + 4}">${formatChartValue(tick, series.unit)}</text>`)
     .join("");
-
-  const xLabels = monthLabels
-    .map((point, index) => {
-      if (
-        index !== 0 &&
-        index !== monthLabels.length - 1 &&
-        index % labelEvery !== 0
-      ) {
-        return "";
-      }
-      const x = xFor(point);
+  const targetBand = scale.targetMin !== null && scale.targetMax !== null
+    ? `<rect class="chart-target-band" x="${padding.left}" y="${yFor(scale.targetMax)}" width="${width - padding.left - padding.right}" height="${Math.max(2, yFor(scale.targetMin) - yFor(scale.targetMax))}"></rect>`
+    : "";
+  const pointMarks = points
+    .map((point) => `
+      <g class="chart-point-wrap" tabindex="0" role="img"
+        aria-label="${escapeHtml(`${series.label}, ${point.month_year}: ${formatChartValue(point.value, series.unit)}`)}">
+        <g class="chart-point" fill="${historyColor(index)}" stroke="${historyColor(index)}">
+          ${pointSymbolPath(historyShape(index), point.x, point.y)}
+        </g>
+        ${chartTooltip(point.x, point.y, [
+          series.label,
+          `${point.month_year}`,
+          `${formatChartValue(point.value, series.unit)}`,
+        ], "point-tooltip")}
+      </g>`)
+    .join("");
+  const xLabels = points
+    .map((point, pointIndex) => {
+      if (pointIndex !== 0 && pointIndex !== points.length - 1 && pointIndex % xLabelEvery !== 0) return "";
       const shortMonth = point.report_month.slice(0, 3);
       return `
-        <line class="chart-tick" x1="${x}" y1="${height - padding.bottom}" x2="${x}" y2="${height - padding.bottom + 6}"></line>
-        <text class="chart-x-label" x="${x}" y="${height - padding.bottom + 24}">${shortMonth} ${point.report_year}</text>`;
+        <line class="chart-tick" x1="${point.x}" y1="${height - padding.bottom}" x2="${point.x}" y2="${height - padding.bottom + 6}"></line>
+        <text class="chart-x-label" x="${point.x}" y="${height - padding.bottom + 24}">${shortMonth} ${point.report_year}</text>`;
     })
     .join("");
+  return `
+    <div class="expanded-chart-wrap">
+      <svg class="history-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(`${series.label} historical chart`)}">
+        <rect class="chart-bg" x="0" y="0" width="${width}" height="${height}" rx="14"></rect>
+        ${targetBand}
+        ${gridLines}
+        <line class="chart-axis" x1="${padding.left}" y1="${height - padding.bottom}" x2="${width - padding.right}" y2="${height - padding.bottom}"></line>
+        <line class="chart-axis" x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${height - padding.bottom}"></line>
+        ${xLabels}
+        <path class="chart-line" d="${path}" stroke="${historyColor(index)}"></path>
+        ${pointMarks}
+      </svg>
+    </div>`;
+}
 
-  const lines = plottedSeries
-    .map((series) => {
-      const plottedPoints = series.points.map((point) => ({
-        ...point,
-        x: xFor(point),
-        y: yFor(point.relativeChange),
-      }));
-      const path = series.points
-        .map((point, index) => {
-          const command = index === 0 ? "M" : "L";
-          return `${command} ${xFor(point).toFixed(2)} ${yFor(point.relativeChange).toFixed(2)}`;
-        })
-        .join(" ");
-      const labelPoint = plottedPoints[Math.floor(plottedPoints.length / 2)] || plottedPoints[0];
-      const points = plottedPoints
-        .map((point) => `
-          <g class="chart-point-wrap" tabindex="0" role="img"
-            aria-label="${escapeHtml(`${series.label}, ${point.month_year}: ${formatChartValue(point.value, series.unit)}`)}">
-            <g class="chart-point" fill="${series.color}" stroke="${series.color}">
-              ${pointSymbolPath(series.shape, point.x, point.y)}
-            </g>
-            ${chartTooltip(point.x, point.y, [
-              series.label,
-              `${point.month_year}`,
-              `${formatChartValue(point.value, series.unit)}`,
-              `${formatPercent(point.relativeChange)} from first report`,
-            ], "point-tooltip")}
-          </g>`)
-        .join("");
-      return `
-        <g class="chart-series" tabindex="0" role="img"
-          aria-label="${escapeHtml(`${series.label} trend, ${formatChartValue(series.min_value, series.unit)} to ${formatChartValue(series.max_value, series.unit)}`)}">
-          <path class="chart-line-hit" d="${path}"></path>
-          <path class="chart-line" d="${path}" stroke="${series.color}"></path>
-          ${points}
-          ${chartTooltip(labelPoint?.x || padding.left, labelPoint?.y || padding.top, [
-            `${series.label} trend`,
-            `First report: ${formatChartValue(series.baseline, series.unit)}`,
-            `Range: ${formatChartValue(series.min_value, series.unit)} → ${formatChartValue(series.max_value, series.unit)}`,
-          ], "series-tooltip")}
-        </g>`;
-    })
-    .join("");
+function historyContext(measurement, historyMatch) {
+  if (!historyMatch) {
+    return `
+      <div class="history-inline-empty">
+        Historical context is loading or unavailable for ${escapeHtml(measurement.label)}.
+      </div>`;
+  }
 
-  const emptyState = visibleSeries.length
-    ? ""
-    : `<text class="chart-empty" x="${width / 2}" y="${height / 2}">Select at least one value to show the trend chart.</text>`;
-
-  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
-  svg.innerHTML = `
-    <rect class="chart-bg" x="0" y="0" width="${width}" height="${height}" rx="14"></rect>
-    ${gridLines}
-    <line class="chart-axis" x1="${padding.left}" y1="${height - padding.bottom}" x2="${width - padding.right}" y2="${height - padding.bottom}"></line>
-    <line class="chart-axis" x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${height - padding.bottom}"></line>
-    ${xLabels}
-    ${lines}
-    ${emptyState}`;
-
-  const skipped = historyData.skipped_reports?.length
-    ? ` ${historyData.skipped_reports.length} linked report${historyData.skipped_reports.length === 1 ? "" : "s"} could not be parsed and were skipped.`
-    : "";
-  document.querySelector("#history-caption").textContent =
-    `Lines show percent change from each field's first available report. The vertical scale recalculates whenever selected values change, with a minimum ±10% range so nearly flat values still look nearly flat.${skipped}`;
+  const { series, index } = historyMatch;
+  const scale = fixedScaleFor(series);
+  const targetText = scale.targetMin !== null && scale.targetMax !== null
+    ? `${formatChartValue(scale.targetMin, series.unit)}–${formatChartValue(scale.targetMax, series.unit)}`
+    : "Reference band unavailable";
+  return `
+      <div class="history-inline">
+        <div class="history-inline-heading">
+          <span class="history-card-symbol">${historyLegendSymbol(index)}</span>
+          <div>
+            <strong>${escapeHtml(series.label)} historical context</strong>
+            <p>Fixed brewing-reference scale, not a data-fitted axis.</p>
+          </div>
+        </div>
+        <div class="history-summary">
+          <span><b>Historical MWRA range</b>${formatChartValue(series.min_value, series.unit)} → ${formatChartValue(series.max_value, series.unit)}</span>
+          <span><b>Chart scale</b>${formatChartValue(scale.min, series.unit)} → ${formatChartValue(scale.max, series.unit)}</span>
+          <span class="reference-summary"><b>Brewing reference</b>${escapeHtml(targetText)}</span>
+        </div>
+        ${expandedChart(series, index)}
+        <p class="history-note">${escapeHtml(scale.note)}</p>
+      </div>`;
 }
 
 async function loadHistory() {
-  const status = document.querySelector("#history-status");
-  const content = document.querySelector("#history-content");
-  status.hidden = false;
-  status.textContent = "Loading historical report data…";
-  content.hidden = true;
   try {
     historyData = await fetchJson("/api/history");
-    activeHistoryKeys = new Set(historyData.series.map((series) => series.key));
-    if (!historyData.series.length) {
-      status.textContent = "No historical brewing values were available to chart.";
-      return;
+    if (currentProfile) {
+      renderProfile(currentProfile, currentPreviousProfile);
     }
-    renderHistoryControls();
-    renderHistoryChart();
-    status.hidden = true;
-    content.hidden = false;
   } catch (error) {
-    const message = error?.message || error?.detail || "Historical report data could not be loaded.";
-    status.textContent = message;
+    console.error("Historical report data could not be loaded.", error);
   }
 }
 
@@ -567,6 +600,27 @@ document.querySelector("#copy-button").addEventListener("click", async () => {
 });
 
 document.querySelector("#retry-button").addEventListener("click", initialize);
+
+document.querySelector("#profile-table").addEventListener("click", (event) => {
+  const valueButton = event.target.closest("[data-copy-value]");
+  if (valueButton) {
+    const label = valueButton.dataset.copyLabel || "Value";
+    writeClipboard(valueButton.dataset.copyValue || "").then((copied) => {
+      showToast(copied ? `${label} copied` : "Clipboard access was unavailable");
+    });
+    return;
+  }
+
+  const button = event.target.closest("[data-history-toggle]");
+  if (!button) return;
+  const key = button.dataset.historyToggle;
+  if (expandedHistoryRows.has(key)) {
+    expandedHistoryRows.delete(key);
+  } else {
+    expandedHistoryRows.add(key);
+  }
+  if (currentProfile) renderProfile(currentProfile, currentPreviousProfile);
+});
 
 reportSelect.addEventListener("change", () => {
   const [year, month] = reportSelect.value.split("-").map(Number);

@@ -4,8 +4,8 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ app_name }}</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v=20260810-1">
-    <script src="{{ url_for('static', path='/app.js') }}?v=20260810-1" defer></script>
+    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v=20260810-4">
+    <script src="{{ url_for('static', path='/app.js') }}?v=20260810-4" defer></script>
   </head>
   <body>
     <header class="site-header">
@@ -80,33 +80,12 @@
           <div class="table-wrap">
             <table>
               <thead>
-                <tr><th>Field</th><th>Value</th><th>Unit</th><th>Change</th></tr>
+                <tr><th></th><th>Field</th><th>Value</th><th>Unit</th><th>Brewing range</th><th>Change</th></tr>
               </thead>
               <tbody id="profile-table"></tbody>
             </table>
           </div>
           <p class="quiet-note">Enter these values manually in your brewing water calculator.</p>
-        </section>
-
-        <section class="card history-card" aria-labelledby="history-title">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Trends across reports</p>
-              <h2 id="history-title">Brewing values over time</h2>
-            </div>
-            <span class="unit-chip">relative change</span>
-          </div>
-          <p class="history-intro">
-            Each checked line shows percent change from that field’s first available report, so values with different units can be compared without exaggerating nearly flat measurements.
-          </p>
-          <div id="history-status" class="history-status">Loading historical report data…</div>
-          <div id="history-content" class="history-content" hidden>
-            <div id="history-controls" class="history-controls" aria-label="Select values to show in the chart"></div>
-            <div class="chart-wrap">
-              <svg id="history-chart" class="history-chart" role="img" aria-labelledby="history-title history-caption"></svg>
-            </div>
-            <p id="history-caption" class="quiet-note"></p>
-          </div>
         </section>
 
         <details class="card details-card stats-card">
