@@ -49,6 +49,9 @@ upcoming events, educational resources, and homebrewing activities.
 - Extracts the `Carroll Water TP Fin. Water Tap (Treated)` values.
 - Converts MWRA units into standard brewing-water values in ppm.
 - Displays calcium, magnesium, sodium, chloride, sulfate, bicarbonate, and pH.
+- Charts the main brewing-water values across every linked monthly report,
+  with checkboxes to show or hide each value on a shared relative-change graph
+  that rescales when selections change.
 - Expands to show the other numeric Carroll finished-water measurements found
   in the same MWRA report.
 - Copies a ready-to-paste text profile to the clipboard.
@@ -331,12 +334,13 @@ python tests/fixtures/generate_fixture.py
 
 ## Local API
 
-The browser interface uses two local endpoints:
+The browser interface uses these local endpoints:
 
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /` | Render the web interface |
 | `GET /api/reports` | List all linked reports and identify the latest one |
+| `GET /api/history` | Return historical chart data for the configured main brewing values |
 | `GET /api/reports/{year}/{month}` | Return one selected report profile |
 | `GET /api/reports/{year}/{month}/pdf` | Stream one selected cached report PDF |
 | `GET /api/reports/{year}/{month}/brewfather.json` | Download a Brewfather recipe containing the selected water profile |

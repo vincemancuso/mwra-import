@@ -13,6 +13,7 @@ from app.models import (
     ReportMetadata,
     ReportCatalog,
     ReportLink,
+    WaterProfileHistoryResponse,
     WaterProfileResponse,
 )
 
@@ -107,6 +108,43 @@ class FixtureService:
     async def latest(self):
         return self._profile()
 
+    async def history(self):
+        march_profile, _ = self._profile(2026, 3)
+        april_profile, _ = self._profile(2026, 4)
+        march_profile.profile_values[0].value = 4.0
+        return WaterProfileHistoryResponse(
+            source_page_url="https://www.mwra.test/monthly",
+            normalized_scale="Each line is independently normalized for fixture tests.",
+            series=[
+                {
+                    "key": "calcium",
+                    "label": "Calcium",
+                    "unit": "ppm",
+                    "description": "Calcium brewing context.",
+                    "min_value": 4.0,
+                    "max_value": 4.37,
+                    "points": [
+                        {
+                            "report_month": "March",
+                            "report_month_number": 3,
+                            "report_year": 2026,
+                            "month_year": "March 2026",
+                            "value": 4.0,
+                            "normalized": 0,
+                        },
+                        {
+                            "report_month": "April",
+                            "report_month_number": 4,
+                            "report_year": 2026,
+                            "month_year": "April 2026",
+                            "value": 4.37,
+                            "normalized": 1,
+                        },
+                    ],
+                }
+            ],
+        )
+
 
 def test_ui_and_api_endpoints():
     with TestClient(app) as client:
@@ -116,6 +154,7 @@ def test_ui_and_api_endpoints():
         reports = client.get("/api/reports")
         selected = client.get("/api/reports/2026/3")
         selected_pdf = client.get("/api/reports/2026/3/pdf")
+        history = client.get("/api/history")
         brewfather = client.get("/api/reports/2026/3/brewfather.json")
         beerxml = client.get("/api/reports/2026/3/beerxml.xml")
         missing = client.get("/api/reports/2025/12")
@@ -138,6 +177,10 @@ def test_ui_and_api_endpoints():
     assert selected.json()["profile_values"][0]["description"]
     assert selected.json()["other_values"][0]["label"] == "Hardness"
     assert selected_pdf.status_code == 200
+    assert history.status_code == 200
+    assert history.json()["series"][0]["key"] == "calcium"
+    assert history.json()["series"][0]["points"][0]["month_year"] == "March 2026"
+    assert history.json()["series"][0]["points"][1]["normalized"] == 1
     assert brewfather.status_code == 200
     assert "attachment" in brewfather.headers["content-disposition"]
     recipe = brewfather.json()

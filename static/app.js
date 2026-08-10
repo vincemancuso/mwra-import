@@ -7,6 +7,19 @@ let currentProfile = null;
 let latestReportKey = null;
 let reportCatalog = [];
 let profileRequestId = 0;
+let historyData = null;
+let activeHistoryKeys = new Set();
+
+const chartColors = [
+  "#a7193f",
+  "#4f6726",
+  "#9a6615",
+  "#355f7d",
+  "#5b4a3e",
+  "#c04f2a",
+  "#6f5aa7",
+];
+const chartShapes = ["circle", "square", "diamond", "triangle", "pentagon", "hexagon", "cross"];
 
 const formatValue = (value) => Number(value).toFixed(2).replace(/\.?0+$/, "");
 const titleCase = (value) => value.charAt(0).toUpperCase() + value.slice(1);
@@ -16,6 +29,8 @@ const escapeHtml = (value) => String(value)
   .replaceAll(">", "&gt;")
   .replaceAll('"', "&quot;")
   .replaceAll("'", "&#039;");
+const historyPointKey = (point) =>
+  `${point.report_year}-${String(point.report_month_number).padStart(2, "0")}`;
 
 function showToast(message) {
   toast.textContent = message;
@@ -221,6 +236,283 @@ async function fetchJson(url) {
   return payload;
 }
 
+function formatChartValue(value, unit = "") {
+  return `${formatValue(value)}${unit ? ` ${unit}` : ""}`;
+}
+
+function formatPercent(value) {
+  const percent = value * 100;
+  return `${percent > 0 ? "+" : ""}${formatValue(percent)}%`;
+}
+
+function historyColor(index) {
+  return chartColors[index % chartColors.length];
+}
+
+function historyShape(index) {
+  return chartShapes[index % chartShapes.length];
+}
+
+function chartTooltip(x, y, lines, className = "") {
+  const width = 184;
+  const height = 34 + Math.max(0, lines.length - 1) * 16;
+  const tooltipX = Math.max(112, Math.min(900 - width - 14, x + 12));
+  const tooltipY = Math.max(12, y - height - 14);
+  const text = lines
+    .map((line, index) => `
+      <text class="chart-tooltip-${index === 0 ? "title" : "text"}" x="${tooltipX + 12}" y="${tooltipY + 20 + index * 16}">${escapeHtml(line)}</text>`)
+    .join("");
+  return `
+    <g class="chart-tooltip ${className}" aria-hidden="true">
+      <rect x="${tooltipX}" y="${tooltipY}" width="${width}" height="${height}" rx="8"></rect>
+      ${text}
+    </g>`;
+}
+
+function pointSymbolPath(shape, x, y, size = 5.5) {
+  const points = {
+    square: [
+      [x - size, y - size],
+      [x + size, y - size],
+      [x + size, y + size],
+      [x - size, y + size],
+    ],
+    diamond: [
+      [x, y - size - 1],
+      [x + size + 1, y],
+      [x, y + size + 1],
+      [x - size - 1, y],
+    ],
+    triangle: [
+      [x, y - size - 1],
+      [x + size + 1, y + size],
+      [x - size - 1, y + size],
+    ],
+    pentagon: Array.from({ length: 5 }, (_, index) => {
+      const angle = -Math.PI / 2 + (index * 2 * Math.PI) / 5;
+      return [x + Math.cos(angle) * (size + 1), y + Math.sin(angle) * (size + 1)];
+    }),
+    hexagon: Array.from({ length: 6 }, (_, index) => {
+      const angle = Math.PI / 6 + (index * 2 * Math.PI) / 6;
+      return [x + Math.cos(angle) * (size + 1), y + Math.sin(angle) * (size + 1)];
+    }),
+  };
+  if (shape === "cross") {
+    return `
+      <path class="symbol-cross" d="M ${x - size} ${y} L ${x + size} ${y} M ${x} ${y - size} L ${x} ${y + size}"></path>`;
+  }
+  const shapePoints = points[shape];
+  if (!shapePoints) {
+    return `<circle cx="${x}" cy="${y}" r="${size}"></circle>`;
+  }
+  const path = shapePoints
+    .map(([pointX, pointY], index) => `${index === 0 ? "M" : "L"} ${pointX} ${pointY}`)
+    .join(" ");
+  return `<path d="${path} Z"></path>`;
+}
+
+function historyLegendSymbol(index) {
+  const color = historyColor(index);
+  const shape = historyShape(index);
+  return `
+    <svg class="history-symbol" viewBox="0 0 24 24" aria-hidden="true">
+      <g style="--symbol-color: ${color}" fill="${color}" stroke="${color}">
+        ${pointSymbolPath(shape, 12, 12, shape === "cross" ? 7.5 : 6.3)}
+      </g>
+    </svg>`;
+}
+
+function renderHistoryControls() {
+  const controls = document.querySelector("#history-controls");
+  controls.innerHTML = historyData.series
+    .map((series, index) => {
+      const checked = activeHistoryKeys.has(series.key) ? " checked" : "";
+      return `
+        <label class="history-toggle">
+          <input type="checkbox" value="${escapeHtml(series.key)}"${checked}>
+          ${historyLegendSymbol(index)}
+          <span>
+            <strong>${escapeHtml(series.label)}</strong>
+            <small>${formatChartValue(series.min_value, series.unit)} → ${formatChartValue(series.max_value, series.unit)}</small>
+          </span>
+        </label>`;
+    })
+    .join("");
+
+  controls.querySelectorAll("input").forEach((input) => {
+    input.addEventListener("change", () => {
+      if (input.checked) {
+        activeHistoryKeys.add(input.value);
+      } else {
+        activeHistoryKeys.delete(input.value);
+      }
+      renderHistoryChart();
+    });
+  });
+}
+
+function renderHistoryChart() {
+  const svg = document.querySelector("#history-chart");
+  if (!historyData?.series?.length) return;
+
+  const visibleSeries = historyData.series
+    .map((series, index) => ({
+      ...series,
+      color: historyColor(index),
+      shape: historyShape(index),
+    }))
+    .filter((series) => activeHistoryKeys.has(series.key));
+
+  const width = 900;
+  const height = 360;
+  const padding = { top: 26, right: 92, bottom: 58, left: 104 };
+  const plotWidth = width - padding.left - padding.right;
+  const plotHeight = height - padding.top - padding.bottom;
+  const allPoints = historyData.series.flatMap((series) => series.points);
+  const monthLabels = [...new Map(allPoints.map((point) => [historyPointKey(point), point])).values()];
+  const xFor = (point) => {
+    const index = monthLabels.findIndex((label) => historyPointKey(label) === historyPointKey(point));
+    return padding.left + (monthLabels.length <= 1 ? plotWidth / 2 : (index / (monthLabels.length - 1)) * plotWidth);
+  };
+  const labelEvery = Math.max(1, Math.ceil(monthLabels.length / 7));
+  const plottedSeries = visibleSeries.map((series) => {
+    const baseline = series.points[0]?.value || 0;
+    return {
+      ...series,
+      baseline,
+      points: series.points.map((point) => ({
+        ...point,
+        relativeChange: baseline === 0
+          ? point.value - baseline
+          : (point.value - baseline) / Math.abs(baseline),
+      })),
+    };
+  });
+  const relativeValues = plottedSeries.flatMap((series) =>
+    series.points.map((point) => point.relativeChange)
+  );
+  const maxAbsChange = Math.max(
+    0.1,
+    ...relativeValues.map((value) => Math.abs(value))
+  ) * 1.08;
+  const yFor = (relativeChange) =>
+    padding.top + ((maxAbsChange - relativeChange) / (maxAbsChange * 2)) * plotHeight;
+
+  const gridLines = [maxAbsChange, maxAbsChange / 2, 0, -maxAbsChange / 2, -maxAbsChange]
+    .map((tick) => {
+      const y = yFor(tick);
+      const label = tick === 0 ? "Baseline" : formatPercent(tick);
+      return `
+        <line class="chart-grid" x1="${padding.left}" y1="${y}" x2="${width - padding.right}" y2="${y}"></line>
+        <text class="chart-y-label" x="${padding.left - 10}" y="${y + 4}">${label}</text>`;
+    })
+    .join("");
+
+  const xLabels = monthLabels
+    .map((point, index) => {
+      if (
+        index !== 0 &&
+        index !== monthLabels.length - 1 &&
+        index % labelEvery !== 0
+      ) {
+        return "";
+      }
+      const x = xFor(point);
+      const shortMonth = point.report_month.slice(0, 3);
+      return `
+        <line class="chart-tick" x1="${x}" y1="${height - padding.bottom}" x2="${x}" y2="${height - padding.bottom + 6}"></line>
+        <text class="chart-x-label" x="${x}" y="${height - padding.bottom + 24}">${shortMonth} ${point.report_year}</text>`;
+    })
+    .join("");
+
+  const lines = plottedSeries
+    .map((series) => {
+      const plottedPoints = series.points.map((point) => ({
+        ...point,
+        x: xFor(point),
+        y: yFor(point.relativeChange),
+      }));
+      const path = series.points
+        .map((point, index) => {
+          const command = index === 0 ? "M" : "L";
+          return `${command} ${xFor(point).toFixed(2)} ${yFor(point.relativeChange).toFixed(2)}`;
+        })
+        .join(" ");
+      const labelPoint = plottedPoints[Math.floor(plottedPoints.length / 2)] || plottedPoints[0];
+      const points = plottedPoints
+        .map((point) => `
+          <g class="chart-point-wrap" tabindex="0" role="img"
+            aria-label="${escapeHtml(`${series.label}, ${point.month_year}: ${formatChartValue(point.value, series.unit)}`)}">
+            <g class="chart-point" fill="${series.color}" stroke="${series.color}">
+              ${pointSymbolPath(series.shape, point.x, point.y)}
+            </g>
+            ${chartTooltip(point.x, point.y, [
+              series.label,
+              `${point.month_year}`,
+              `${formatChartValue(point.value, series.unit)}`,
+              `${formatPercent(point.relativeChange)} from first report`,
+            ], "point-tooltip")}
+          </g>`)
+        .join("");
+      return `
+        <g class="chart-series" tabindex="0" role="img"
+          aria-label="${escapeHtml(`${series.label} trend, ${formatChartValue(series.min_value, series.unit)} to ${formatChartValue(series.max_value, series.unit)}`)}">
+          <path class="chart-line-hit" d="${path}"></path>
+          <path class="chart-line" d="${path}" stroke="${series.color}"></path>
+          ${points}
+          ${chartTooltip(labelPoint?.x || padding.left, labelPoint?.y || padding.top, [
+            `${series.label} trend`,
+            `First report: ${formatChartValue(series.baseline, series.unit)}`,
+            `Range: ${formatChartValue(series.min_value, series.unit)} → ${formatChartValue(series.max_value, series.unit)}`,
+          ], "series-tooltip")}
+        </g>`;
+    })
+    .join("");
+
+  const emptyState = visibleSeries.length
+    ? ""
+    : `<text class="chart-empty" x="${width / 2}" y="${height / 2}">Select at least one value to show the trend chart.</text>`;
+
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.innerHTML = `
+    <rect class="chart-bg" x="0" y="0" width="${width}" height="${height}" rx="14"></rect>
+    ${gridLines}
+    <line class="chart-axis" x1="${padding.left}" y1="${height - padding.bottom}" x2="${width - padding.right}" y2="${height - padding.bottom}"></line>
+    <line class="chart-axis" x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${height - padding.bottom}"></line>
+    ${xLabels}
+    ${lines}
+    ${emptyState}`;
+
+  const skipped = historyData.skipped_reports?.length
+    ? ` ${historyData.skipped_reports.length} linked report${historyData.skipped_reports.length === 1 ? "" : "s"} could not be parsed and were skipped.`
+    : "";
+  document.querySelector("#history-caption").textContent =
+    `Lines show percent change from each field's first available report. The vertical scale recalculates whenever selected values change, with a minimum ±10% range so nearly flat values still look nearly flat.${skipped}`;
+}
+
+async function loadHistory() {
+  const status = document.querySelector("#history-status");
+  const content = document.querySelector("#history-content");
+  status.hidden = false;
+  status.textContent = "Loading historical report data…";
+  content.hidden = true;
+  try {
+    historyData = await fetchJson("/api/history");
+    activeHistoryKeys = new Set(historyData.series.map((series) => series.key));
+    if (!historyData.series.length) {
+      status.textContent = "No historical brewing values were available to chart.";
+      return;
+    }
+    renderHistoryControls();
+    renderHistoryChart();
+    status.hidden = true;
+    content.hidden = false;
+  } catch (error) {
+    const message = error?.message || error?.detail || "Historical report data could not be loaded.";
+    status.textContent = message;
+  }
+}
+
 async function loadProfile(year, month, initial = false) {
   const requestId = ++profileRequestId;
   loadingCard.hidden = false;
@@ -262,6 +554,7 @@ async function initialize() {
       .join("");
     reportSelect.value = latestReportKey;
     await loadProfile(catalog.latest.year, catalog.latest.month, true);
+    loadHistory();
   } catch (error) {
     renderError(error instanceof Error ? { message: error.message } : error);
   }

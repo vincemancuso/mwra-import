@@ -87,3 +87,36 @@ class WaterProfileResponse(BaseModel):
     other_values: list[ProfileMeasurement] = Field(default_factory=list)
     conversions: list[Conversion]
     brewfather_values: BrewfatherValues
+
+
+class HistoryPoint(BaseModel):
+    report_month: str
+    report_month_number: int = Field(ge=1, le=12)
+    report_year: int
+    month_year: str
+    value: float
+    normalized: float
+
+
+class HistorySeries(BaseModel):
+    key: str
+    label: str
+    unit: str
+    description: str
+    min_value: float
+    max_value: float
+    points: list[HistoryPoint]
+
+
+class SkippedHistoryReport(BaseModel):
+    month: int = Field(ge=1, le=12)
+    year: int = Field(ge=2000)
+    month_year: str
+    error: str
+
+
+class WaterProfileHistoryResponse(BaseModel):
+    source_page_url: str
+    normalized_scale: str
+    series: list[HistorySeries]
+    skipped_reports: list[SkippedHistoryReport] = Field(default_factory=list)

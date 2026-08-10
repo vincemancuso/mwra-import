@@ -74,6 +74,11 @@ async def reports(request: Request):
     return await service(request).reports()
 
 
+@app.get("/api/history")
+async def history(request: Request):
+    return await service(request).history()
+
+
 @app.get("/api/reports/{year}/{month}")
 async def report_profile(request: Request, year: int, month: int):
     profile, _ = await service(request).profile(year, month)

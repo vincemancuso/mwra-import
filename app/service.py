@@ -17,7 +17,16 @@ from app.errors import (
     ReportDownloadError,
     ReportNotFoundError,
 )
-from app.models import ReportCatalog, ReportLink, ReportMetadata, WaterProfileResponse
+from app.models import (
+    HistoryPoint,
+    HistorySeries,
+    ReportCatalog,
+    ReportLink,
+    ReportMetadata,
+    SkippedHistoryReport,
+    WaterProfileHistoryResponse,
+    WaterProfileResponse,
+)
 from app.parser import parse_report_pdf_details
 from app.settings import AppSettings
 from app.water_context import build_profile_measurements
@@ -162,3 +171,92 @@ class WaterProfileService:
             if self._catalog is None or force_refresh:
                 self._catalog = await self.discover()
             return await self._build_profile(self._catalog.latest, force_refresh)
+
+    async def history(self) -> WaterProfileHistoryResponse:
+        async with self._lock:
+            if self._catalog is None:
+                self._catalog = await self.discover()
+
+            profiles: list[WaterProfileResponse] = []
+            skipped_reports: list[SkippedHistoryReport] = []
+            for report in reversed(self._catalog.reports):
+                try:
+                    profile, _ = await self._build_profile(report)
+                    profiles.append(profile)
+                except Exception as exc:
+                    skipped_reports.append(
+                        SkippedHistoryReport(
+                            month=report.month,
+                            year=report.year,
+                            month_year=report.month_year,
+                            error=str(exc),
+                        )
+                    )
+
+            series: list[HistorySeries] = []
+            for field_key in self.settings.main_profile_fields:
+                measurements = [
+                    next(
+                        (
+                            measurement
+                            for measurement in profile.profile_values
+                            if measurement.key == field_key
+                        ),
+                        None,
+                    )
+                    for profile in profiles
+                ]
+                paired = [
+                    (profile, measurement)
+                    for profile, measurement in zip(profiles, measurements, strict=True)
+                    if measurement is not None
+                ]
+                if not paired:
+                    continue
+
+                values = [measurement.value for _, measurement in paired]
+                min_value = min(values)
+                max_value = max(values)
+                spread = max_value - min_value
+                representative = paired[-1][1]
+                points = [
+                    HistoryPoint(
+                        report_month=profile.report.report_month,
+                        report_month_number=profile.report.report_month_number,
+                        report_year=profile.report.report_year,
+                        month_year=(
+                            f"{profile.report.report_month} "
+                            f"{profile.report.report_year}"
+                        ),
+                        value=measurement.value,
+                        normalized=(
+                            0.5
+                            if spread == 0
+                            else (measurement.value - min_value) / spread
+                        ),
+                    )
+                    for profile, measurement in paired
+                ]
+                series.append(
+                    HistorySeries(
+                        key=field_key,
+                        label=representative.label,
+                        unit=representative.unit,
+                        description=representative.description,
+                        min_value=min_value,
+                        max_value=max_value,
+                        points=points,
+                    )
+                )
+
+            return WaterProfileHistoryResponse(
+                source_page_url=self.source_url,
+                normalized_scale=(
+                    "The browser charts each selected field as percent change "
+                    "from that field's first available linked report and "
+                    "recalculates the visible scale when fields are selected "
+                    "or hidden."
+                ),
+                series=series,
+                skipped_reports=skipped_reports,
+            )
