@@ -40,6 +40,10 @@ class RawValueStore:
             if re.fullmatch(r"20\d{2}-(?:0[1-9]|1[0-2])", column)
         )
 
+    def export_rows(self) -> tuple[list[str], list[dict[str, str]]]:
+        """Return the stored raw CSV header and rows for download/export use."""
+        return self._read_rows()
+
     def has_month(self, year: int, month: int) -> bool:
         return month_key(year, month) in self.month_columns()
 

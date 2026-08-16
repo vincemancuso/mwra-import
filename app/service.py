@@ -1,5 +1,7 @@
 import asyncio
 import calendar
+import csv
+from io import StringIO
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -45,6 +47,16 @@ REQUIRED_RAW_KEYS = {
     "alkalinity",
     "ph",
 }
+
+BREWING_EXPORT_FIELDS = [
+    ("calcium", "Calcium", "ppm"),
+    ("magnesium", "Magnesium", "ppm"),
+    ("sodium", "Sodium", "ppm"),
+    ("chloride", "Chloride", "ppm"),
+    ("sulfate", "Sulfate", "ppm"),
+    ("bicarbonate", "Bicarbonate", "ppm"),
+    ("ph", "pH", "pH"),
+]
 
 
 class WaterProfileService:
@@ -349,3 +361,68 @@ class WaterProfileService:
                 series=series,
                 skipped_reports=skipped_reports,
             )
+
+    async def brewing_values_csv(self) -> str:
+        async with self._lock:
+            if self._catalog is None:
+                self._catalog = await self.discover()
+            await self._ensure_store_current()
+
+            months = self.store.sorted_month_columns()
+            output = StringIO()
+            fieldnames = ["key", "parameter", "unit", *months]
+            writer = csv.DictWriter(output, fieldnames=fieldnames)
+            writer.writeheader()
+
+            values_by_month: dict[str, dict[str, float]] = {}
+            for stored_month in months:
+                year, month = (int(part) for part in stored_month.split("-"))
+                try:
+                    raw_all = self.store.load_month(year, month)
+                    raw = {
+                        key: raw_all[key]
+                        for key in REQUIRED_RAW_KEYS
+                        if key in raw_all
+                    }
+                    brewfather, _ = convert_measurements(raw)
+                    values_by_month[stored_month] = {
+                        "calcium": brewfather.calcium,
+                        "magnesium": brewfather.magnesium,
+                        "sodium": brewfather.sodium,
+                        "chloride": brewfather.chloride,
+                        "sulfate": brewfather.sulfate,
+                        "bicarbonate": brewfather.bicarbonate,
+                        "ph": brewfather.ph,
+                    }
+                except Exception:
+                    values_by_month[stored_month] = {}
+
+            for key, label, unit in BREWING_EXPORT_FIELDS:
+                row = {"key": key, "parameter": label, "unit": unit}
+                row.update(
+                    {
+                        stored_month: (
+                            f"{values_by_month[stored_month][key]:g}"
+                            if key in values_by_month[stored_month]
+                            else ""
+                        )
+                        for stored_month in months
+                    }
+                )
+                writer.writerow(row)
+
+            return output.getvalue()
+
+    async def raw_values_csv(self) -> str:
+        async with self._lock:
+            if self._catalog is None:
+                self._catalog = await self.discover()
+            await self._ensure_store_current()
+
+            header, rows = self.store.export_rows()
+            output = StringIO()
+            writer = csv.DictWriter(output, fieldnames=header)
+            writer.writeheader()
+            for row in rows:
+                writer.writerow({field: row.get(field, "") for field in header})
+            return output.getvalue()

@@ -4,8 +4,8 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ app_name }}</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v=20260816-9">
-    <script src="{{ url_for('static', path='/app.js') }}?v=20260816-9" defer></script>
+    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v=20260816-16">
+    <script src="{{ url_for('static', path='/app.js') }}?v=20260816-16" defer></script>
   </head>
   <body>
     <header class="site-header">
@@ -57,15 +57,29 @@
                       <a id="brewfather-download" class="button button-secondary" href="#" download>
                         Brewfather JSON
                       </a>
-                      <button class="info-tip" type="button" aria-label="About the Brewfather JSON export" aria-describedby="json-export-tip">?</button>
+                      <button class="info-tip" type="button" aria-label="About the Brewfather JSON export" aria-describedby="json-export-tip"><span aria-hidden="true">i</span></button>
                       <span class="tip-content" id="json-export-tip" role="tooltip">Creates a temporary dummy recipe containing this water chemistry. Brewfather exports cannot create a reusable, independently reconfigurable water profile, so import the recipe and copy or save its water source inside Brewfather.</span>
                     </span>
                     <span class="export-action">
                       <a id="beerxml-download" class="button button-secondary" href="#" download>
                         BeerXML
                       </a>
-                      <button class="info-tip" type="button" aria-label="About the BeerXML export" aria-describedby="xml-export-tip">?</button>
+                      <button class="info-tip" type="button" aria-label="About the BeerXML export" aria-describedby="xml-export-tip"><span aria-hidden="true">i</span></button>
                       <span class="tip-content" id="xml-export-tip" role="tooltip">Exports the same temporary dummy recipe as BeerXML with a standard WATER record. BeerXML carries recipe water, but cannot install a standalone reusable Brewfather water profile.</span>
+                    </span>
+                    <span class="export-action">
+                      <a id="brewing-csv-download" class="button button-secondary" href="/api/exports/brewing-values.csv" download>
+                        Brewing CSV
+                      </a>
+                      <button class="info-tip" type="button" aria-label="About the brewing values CSV export" aria-describedby="brewing-csv-export-tip"><span aria-hidden="true">i</span></button>
+                      <span class="tip-content" id="brewing-csv-export-tip" role="tooltip">Exports the brewing-related calculator values for every stored report month. Minerals and bicarbonate are converted to ppm; pH remains pH because it is not a concentration.</span>
+                    </span>
+                    <span class="export-action">
+                      <a id="raw-csv-download" class="button button-secondary" href="/api/exports/raw-values.csv" download>
+                        Raw MWRA CSV
+                      </a>
+                      <button class="info-tip" type="button" aria-label="About the raw MWRA CSV export" aria-describedby="raw-csv-export-tip"><span aria-hidden="true">i</span></button>
+                      <span class="tip-content" id="raw-csv-export-tip" role="tooltip">Exports every stored MWRA measurement across every stored report month using the original report values and units, before brewing conversions.</span>
                     </span>
                   </div>
                 </details>
@@ -73,19 +87,16 @@
             </div>
           </div>
           <div class="table-toolbar">
-            <div class="unit-toggle" role="group" aria-label="Choose displayed table units">
-              <span class="unit-toggle-help">
-                <button class="unit-toggle-button active" type="button" data-unit-mode="brewing" aria-describedby="brewing-units-tip">Brewing units</button>
-                <span class="unit-tip-content" id="brewing-units-tip" role="tooltip">
-                  <strong>Brewing units</strong>
-                  <span>Brewing-ready values converted for water calculators.</span>
-                </span>
-              </span>
-              <span class="unit-toggle-help">
-                <button class="unit-toggle-button" type="button" data-unit-mode="raw" aria-describedby="mwra-units-tip">MWRA units</button>
-                <span class="unit-tip-content" id="mwra-units-tip" role="tooltip">
-                  <strong>MWRA units</strong>
-                  <span>Original MWRA report values and units before brewing conversions.</span>
+            <div class="table-unit-controls">
+              <div class="unit-toggle" role="group" aria-label="Choose displayed table units">
+                <button class="unit-toggle-button active" type="button" data-unit-mode="brewing" aria-pressed="true">Brewing units</button>
+                <button class="unit-toggle-button" type="button" data-unit-mode="raw" aria-pressed="false">MWRA units</button>
+              </div>
+              <span class="unit-info-help">
+                <button class="info-tip" type="button" aria-label="About displayed table units" aria-describedby="unit-mode-tip"><span aria-hidden="true">i</span></button>
+                <span class="tip-content unit-mode-tip-content" id="unit-mode-tip" role="tooltip">
+                  <strong id="unit-mode-tip-title">Brewing units</strong>
+                  <span id="unit-mode-tip-body">Brewing-ready values converted for water calculators.</span>
                 </span>
               </span>
             </div>

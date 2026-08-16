@@ -5,7 +5,7 @@ import pytest
 
 from app.service import WaterProfileService
 from app.settings import AppSettings
-from app.models import RawMeasurement
+from app.models import RawMeasurement, ReportCatalog, ReportLink
 from app.report_store import RawValueStore
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -146,3 +146,68 @@ async def test_history_uses_csv_months_that_are_no_longer_linked(tmp_path: Path)
         "December 2025",
         "April 2026",
     ]
+
+
+@pytest.mark.asyncio
+async def test_csv_exports_use_cached_store_values(tmp_path: Path):
+    csv_path = tmp_path / "mwra-values.csv"
+    store = RawValueStore(csv_path)
+    store.save_month(2026, 3, raw_measurements(4000))
+    store.save_month(
+        2026,
+        4,
+        {
+            **raw_measurements(4370),
+            "hardness": RawMeasurement(
+                parameter="Hardness",
+                value=14.4,
+                unit="MG/L",
+                source_label="Metro-Boston treated/finished water",
+            ),
+        },
+    )
+
+    settings = AppSettings(
+        mwra_reports_page_url="https://water.example.test/monthly",
+        main_profile_fields=["calcium"],
+    )
+    service = WaterProfileService(
+        settings=settings,
+        reports_dir=tmp_path / "reports",
+        raw_values_csv=csv_path,
+    )
+    service._catalog = ReportCatalog(
+        reports=[
+            ReportLink(
+                month=4,
+                year=2026,
+                label="April 2026",
+                url="https://water.example.test/april.pdf",
+            ),
+            ReportLink(
+                month=3,
+                year=2026,
+                label="March 2026",
+                url="https://water.example.test/march.pdf",
+            ),
+        ],
+        latest=ReportLink(
+            month=4,
+            year=2026,
+            label="April 2026",
+            url="https://water.example.test/april.pdf",
+        ),
+    )
+
+    brewing_csv = await service.brewing_values_csv()
+    raw_csv = await service.raw_values_csv()
+
+    assert brewing_csv.splitlines()[0] == "key,parameter,unit,2026-03,2026-04"
+    assert "calcium,Calcium,ppm,4,4.37" in brewing_csv
+    assert "bicarbonate,Bicarbonate,ppm,49.17,49.17" in brewing_csv
+    assert "ph,pH,pH,9.7,9.7" in brewing_csv
+    assert raw_csv.splitlines()[0] == (
+        "key,parameter,unit,source_label,2026-03,2026-04"
+    )
+    assert "calcium,Calcium,UG/L,Metro-Boston treated/finished water,4000,4370" in raw_csv
+    assert "hardness,Hardness,MG/L,Metro-Boston treated/finished water,,14.4" in raw_csv

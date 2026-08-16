@@ -145,6 +145,20 @@ class FixtureService:
             ],
         )
 
+    async def brewing_values_csv(self):
+        return (
+            "key,parameter,unit,2026-03,2026-04\r\n"
+            "calcium,Calcium,ppm,4,4.37\r\n"
+            "ph,pH,pH,9.6,9.7\r\n"
+        )
+
+    async def raw_values_csv(self):
+        return (
+            "key,parameter,unit,source_label,2026-03,2026-04\r\n"
+            "calcium,Calcium,UG/L,fixture,4000,4370\r\n"
+            "hardness,Hardness,MG/L,fixture,14,14.4\r\n"
+        )
+
 
 def test_ui_and_api_endpoints():
     with TestClient(app) as client:
@@ -155,6 +169,8 @@ def test_ui_and_api_endpoints():
         selected = client.get("/api/reports/2026/3")
         selected_pdf = client.get("/api/reports/2026/3/pdf")
         history = client.get("/api/history")
+        brewing_csv = client.get("/api/exports/brewing-values.csv")
+        raw_csv = client.get("/api/exports/raw-values.csv")
         brewfather = client.get("/api/reports/2026/3/brewfather.json")
         beerxml = client.get("/api/reports/2026/3/beerxml.xml")
         missing = client.get("/api/reports/2025/12")
@@ -168,6 +184,8 @@ def test_ui_and_api_endpoints():
     assert "MWRA units" in page.text
     assert "About the Brewfather JSON export" in page.text
     assert "About the BeerXML export" in page.text
+    assert "About the brewing values CSV export" in page.text
+    assert "About the raw MWRA CSV export" in page.text
     assert reports.status_code == 200
     assert reports.json()["latest"]["month"] == 4
     assert reports.json()["reports"][1]["month_year"] == "March 2026"
@@ -181,6 +199,14 @@ def test_ui_and_api_endpoints():
     assert history.json()["series"][0]["key"] == "calcium"
     assert history.json()["series"][0]["points"][0]["month_year"] == "March 2026"
     assert history.json()["series"][0]["points"][1]["normalized"] == 1
+    assert brewing_csv.status_code == 200
+    assert brewing_csv.headers["content-type"].startswith("text/csv")
+    assert "mwra-brewing-values-ppm.csv" in brewing_csv.headers["content-disposition"]
+    assert "calcium,Calcium,ppm,4,4.37" in brewing_csv.text
+    assert raw_csv.status_code == 200
+    assert raw_csv.headers["content-type"].startswith("text/csv")
+    assert "mwra-raw-water-values.csv" in raw_csv.headers["content-disposition"]
+    assert "hardness,Hardness,MG/L,fixture,14,14.4" in raw_csv.text
     assert brewfather.status_code == 200
     assert "attachment" in brewfather.headers["content-disposition"]
     recipe = brewfather.json()

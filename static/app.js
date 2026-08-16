@@ -13,6 +13,7 @@ let currentUnitMode = "brewing";
 let otherMetricsExpanded = false;
 const expandedHistoryRows = new Set();
 const historyIntervals = {};
+const historyScaleModes = {};
 
 const chartColors = [
   "#a7193f",
@@ -31,6 +32,20 @@ const historyIntervalOptions = [
   { key: "1y", label: "1 year", months: 12, fillMissing: true },
   { key: "all", label: "All time", fillMissing: false },
 ];
+const historyScaleOptions = [
+  { key: "brewing", label: "Brewing range" },
+  { key: "fit", label: "Scale to fit data" },
+];
+const unitModeHelp = {
+  brewing: {
+    title: "Brewing units",
+    body: "Brewing-ready values converted for water calculators.",
+  },
+  raw: {
+    title: "MWRA units",
+    body: "Original MWRA report values and units before brewing conversions.",
+  },
+};
 const monthNames = [
   "January",
   "February",
@@ -84,6 +99,46 @@ function showToast(message) {
   toast.textContent = message;
   toast.classList.add("visible");
   window.setTimeout(() => toast.classList.remove("visible"), 2200);
+}
+
+function updateUnitModeControls() {
+  document.querySelectorAll("[data-unit-mode]").forEach((candidate) => {
+    const active = candidate.dataset.unitMode === currentUnitMode;
+    candidate.classList.toggle("active", active);
+    candidate.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+
+  const help = unitModeHelp[currentUnitMode] || unitModeHelp.brewing;
+  const title = document.querySelector("#unit-mode-tip-title");
+  const body = document.querySelector("#unit-mode-tip-body");
+  if (title) title.textContent = help.title;
+  if (body) body.textContent = help.body;
+}
+
+function showManualCopyFallback(text, label = "Text") {
+  document.querySelector(".copy-fallback")?.remove();
+  const panel = document.createElement("div");
+  panel.className = "copy-fallback";
+  panel.setAttribute("role", "dialog");
+  panel.setAttribute("aria-label", "Manual copy fallback");
+
+  const title = document.createElement("strong");
+  title.textContent = "Clipboard access was unavailable";
+  const note = document.createElement("p");
+  note.textContent = `Select and copy ${label.toLowerCase()} manually.`;
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  const close = document.createElement("button");
+  close.className = "copy-fallback-close";
+  close.type = "button";
+  close.textContent = "Close";
+  close.addEventListener("click", () => panel.remove());
+
+  panel.append(title, note, textarea, close);
+  document.body.appendChild(panel);
+  textarea.focus();
+  textarea.select();
 }
 
 function copyText(profile) {
@@ -314,6 +369,16 @@ async function writeClipboard(text) {
   return copied;
 }
 
+async function copyWithFallback(text, label, successMessage) {
+  const copied = await writeClipboard(text);
+  if (copied) {
+    showToast(successMessage);
+  } else {
+    showToast("Clipboard unavailable — select and copy manually");
+    showManualCopyFallback(text, label);
+  }
+}
+
 function renderProfile(profile, previousProfile = null) {
   currentProfile = profile;
   currentPreviousProfile = previousProfile;
@@ -406,6 +471,8 @@ function renderProfile(profile, previousProfile = null) {
   const pdfFrame = document.querySelector("#pdf-frame");
   document.querySelector("#brewfather-download").href = brewfatherUrl;
   document.querySelector("#beerxml-download").href = beerxmlUrl;
+  document.querySelector("#brewing-csv-download").href = "/api/exports/brewing-values.csv";
+  document.querySelector("#raw-csv-download").href = "/api/exports/raw-values.csv";
   pdfLink.href = pdfUrl;
   pdfFrame.dataset.src = pdfUrl;
   if (pdfFrame.closest("details").open) {
@@ -467,7 +534,11 @@ function historyShape(index) {
 }
 
 function historyIntervalFor(key) {
-  return historyIntervals[key] || "all";
+  return historyIntervals[key] || "3m";
+}
+
+function historyScaleModeFor(key) {
+  return historyScaleModes[key] || "brewing";
 }
 
 function intervalOptionFor(key) {
@@ -602,6 +673,22 @@ function fixedScaleFor(series) {
   };
 }
 
+function fittedScaleFor(series, points, referenceScale) {
+  const values = points.map((point) => point.value).filter((value) => value !== null);
+  if (!values.length) return referenceScale;
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+  const spread = maxValue - minValue;
+  const padding = spread === 0
+    ? Math.max(Math.abs(minValue) * 0.05, series.key === "ph" ? 0.05 : 0.5)
+    : spread * 0.18;
+  return {
+    ...referenceScale,
+    min: Math.max(0, minValue - padding),
+    max: maxValue + padding,
+  };
+}
+
 function chartPath(series, scale, width, height, padding) {
   const plotWidth = width - padding.left - padding.right;
   const plotHeight = height - padding.top - padding.bottom;
@@ -641,8 +728,7 @@ function chartLinePaths(points) {
   );
 }
 
-function expandedChart(series, index) {
-  const scale = fixedScaleFor(series);
+function expandedChart(series, index, scale, chartTitle, scaleControls, scaleNote, scaleTipId) {
   const width = 820;
   const height = 280;
   const padding = { top: 22, right: 82, bottom: 52, left: 76 };
@@ -656,8 +742,10 @@ function expandedChart(series, index) {
       <line class="chart-grid" x1="${padding.left}" y1="${yFor(tick)}" x2="${width - padding.right}" y2="${yFor(tick)}"></line>
       <text class="chart-y-label" x="${padding.left - 10}" y="${yFor(tick) + 4}">${formatSeriesValue(series, tick)}</text>`)
     .join("");
-  const targetBand = scale.targetMin !== null && scale.targetMax !== null
-    ? `<rect class="chart-target-band" x="${padding.left}" y="${yFor(scale.targetMax)}" width="${width - padding.left - padding.right}" height="${Math.max(2, yFor(scale.targetMin) - yFor(scale.targetMax))}"></rect>`
+  const targetBandMin = scale.targetMin === null ? null : Math.max(scale.min, scale.targetMin);
+  const targetBandMax = scale.targetMax === null ? null : Math.min(scale.max, scale.targetMax);
+  const targetBand = targetBandMin !== null && targetBandMax !== null && targetBandMax > targetBandMin
+    ? `<rect class="chart-target-band" x="${padding.left}" y="${yFor(targetBandMax)}" width="${width - padding.left - padding.right}" height="${Math.max(2, yFor(targetBandMin) - yFor(targetBandMax))}"></rect>`
     : "";
   const selectedMarker = selectedPoint
     ? `
@@ -694,6 +782,25 @@ function expandedChart(series, index) {
     .join("");
   return `
     <div class="expanded-chart-wrap">
+      <div class="history-chart-heading">
+        <h3>${escapeHtml(chartTitle)}</h3>
+        <div class="history-chart-controls">
+          <div class="unit-toggle" role="group" aria-label="${escapeHtml(`${series.label} y-axis scale`)}">
+            ${scaleControls}
+          </div>
+          <span class="history-scale-help">
+            <button class="info-tip" type="button"
+              aria-label="About this chart scale"
+              aria-describedby="${escapeHtml(scaleTipId)}">
+              <span aria-hidden="true">i</span>
+            </button>
+            <span class="tip-content scale-tip-content" id="${escapeHtml(scaleTipId)}" role="tooltip">
+              <strong>${escapeHtml(historyScaleOptions.find((option) => option.key === historyScaleModeFor(series.key))?.label || "Chart scale")}</strong>
+              <span>${escapeHtml(scaleNote)}</span>
+            </span>
+          </span>
+        </div>
+      </div>
       <svg class="history-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(`${series.label} historical chart`)}">
         <rect class="chart-bg" x="0" y="0" width="${width}" height="${height}" rx="14"></rect>
         ${targetBand}
@@ -720,11 +827,16 @@ function historyContext(measurement, historyMatch) {
   const { series, index } = historyMatch;
   const visibleSeries = visibleSeriesFor(series);
   const availablePoints = valuedPoints(visibleSeries.points);
-  const scale = fixedScaleFor(series);
-  const targetText = scale.targetMin !== null && scale.targetMax !== null
-    ? `${formatSeriesValue(series, scale.targetMin)}–${formatSeriesValue(series, scale.targetMax)}`
+  const referenceScale = fixedScaleFor(series);
+  const scaleMode = historyScaleModeFor(series.key);
+  const scale = scaleMode === "fit"
+    ? fittedScaleFor(series, availablePoints, referenceScale)
+    : referenceScale;
+  const targetText = referenceScale.targetMin !== null && referenceScale.targetMax !== null
+    ? `${formatSeriesValue(series, referenceScale.targetMin)}–${formatSeriesValue(series, referenceScale.targetMax)}`
     : "Reference band unavailable";
   const intervalKey = historyIntervalFor(series.key);
+  const intervalOption = intervalOptionFor(intervalKey);
   const intervalControls = historyIntervalOptions
     .map((option) => `
       <button class="history-interval-button${option.key === intervalKey ? " active" : ""}" type="button"
@@ -734,20 +846,31 @@ function historyContext(measurement, historyMatch) {
         ${escapeHtml(option.label)}
       </button>`)
     .join("");
+  const scaleControls = historyScaleOptions
+    .map((option) => `
+      <button class="unit-toggle-button${option.key === scaleMode ? " active" : ""}" type="button"
+        data-history-scale="${escapeHtml(option.key)}"
+        data-history-key="${escapeHtml(series.key)}"
+        aria-pressed="${option.key === scaleMode ? "true" : "false"}">
+        ${escapeHtml(option.label)}
+      </button>`)
+    .join("");
   const visibleRangeText = availablePoints.length
     ? `${formatSeriesValue(series, Math.min(...availablePoints.map((point) => point.value)))} → ${formatSeriesValue(series, Math.max(...availablePoints.map((point) => point.value)))}`
     : "No values in interval";
+  const scaleNote = scaleMode === "fit"
+    ? "Scale to fit data zooms the y-axis to the visible MWRA values so smaller month-to-month changes are easier to see."
+    : "This chart uses a broad fixed brewing scale, so very low-mineral MWRA values may look nearly flat. Check the Visible MWRA range for the smaller month-to-month movement.";
+  const contextDescription = `${series.description} ${referenceScale.note}`;
+  const chartTitle = `MWRA ${series.label} Levels by Month (${intervalOption.label})`;
+  const scaleTipId = `history-scale-${series.key.replaceAll("_", "-")}-tip`;
   const chartMarkup = visibleSeries.points.length
-    ? expandedChart(visibleSeries, index)
+    ? expandedChart(visibleSeries, index, scale, chartTitle, scaleControls, scaleNote, scaleTipId)
     : `<div class="history-inline-empty">No ${escapeHtml(series.label)} values are available in this interval.</div>`;
   return `
       <div class="history-inline">
-        <div class="history-inline-heading">
-          <span class="history-card-symbol">${historyLegendSymbol(index)}</span>
-          <div>
-            <strong>${escapeHtml(series.label)} historical context</strong>
-            <p>${escapeHtml(series.description)}</p>
-          </div>
+        <div class="history-description">
+          <p>${escapeHtml(contextDescription)}</p>
         </div>
         <div class="history-interval-toggle" role="group" aria-label="${escapeHtml(`${series.label} chart interval`)}">
           ${intervalControls}
@@ -758,7 +881,6 @@ function historyContext(measurement, historyMatch) {
           <span class="reference-summary"><b>Brewing reference</b>${escapeHtml(targetText)}</span>
         </div>
         ${chartMarkup}
-        <p class="history-note">${escapeHtml(scale.note)}</p>
       </div>`;
 }
 
@@ -822,8 +944,11 @@ async function initialize() {
 
 document.querySelector("#copy-button").addEventListener("click", async () => {
   if (!currentProfile) return;
-  const copied = await writeClipboard(copyText(currentProfile));
-  showToast(copied ? "Water profile values copied" : "Clipboard access was unavailable");
+  await copyWithFallback(
+    copyText(currentProfile),
+    "water profile values",
+    "Water profile values copied",
+  );
 });
 
 document.querySelector("#retry-button").addEventListener("click", initialize);
@@ -831,20 +956,18 @@ document.querySelector("#retry-button").addEventListener("click", initialize);
 document.querySelectorAll("[data-unit-mode]").forEach((button) => {
   button.addEventListener("click", () => {
     currentUnitMode = button.dataset.unitMode || "brewing";
-    document.querySelectorAll("[data-unit-mode]").forEach((candidate) => {
-      candidate.classList.toggle("active", candidate.dataset.unitMode === currentUnitMode);
-    });
+    updateUnitModeControls();
     if (currentProfile) renderProfile(currentProfile, currentPreviousProfile);
   });
 });
+
+updateUnitModeControls();
 
 document.querySelector("#profile-table").addEventListener("click", (event) => {
   const valueButton = event.target.closest("[data-copy-value]");
   if (valueButton) {
     const label = valueButton.dataset.copyLabel || "Value";
-    writeClipboard(valueButton.dataset.copyValue || "").then((copied) => {
-      showToast(copied ? `${label} copied` : "Clipboard access was unavailable");
-    });
+    copyWithFallback(valueButton.dataset.copyValue || "", label, `${label} copied`);
     return;
   }
 
@@ -858,6 +981,13 @@ document.querySelector("#profile-table").addEventListener("click", (event) => {
   const intervalButton = event.target.closest("[data-history-interval]");
   if (intervalButton) {
     historyIntervals[intervalButton.dataset.historyKey] = intervalButton.dataset.historyInterval;
+    if (currentProfile) renderProfile(currentProfile, currentPreviousProfile);
+    return;
+  }
+
+  const scaleButton = event.target.closest("[data-history-scale]");
+  if (scaleButton) {
+    historyScaleModes[scaleButton.dataset.historyKey] = scaleButton.dataset.historyScale;
     if (currentProfile) renderProfile(currentProfile, currentPreviousProfile);
     return;
   }

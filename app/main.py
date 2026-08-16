@@ -79,6 +79,32 @@ async def history(request: Request):
     return await service(request).history()
 
 
+@app.get("/api/exports/brewing-values.csv")
+async def brewing_values_csv(request: Request):
+    return Response(
+        content=await service(request).brewing_values_csv(),
+        headers={
+            "Content-Disposition": (
+                'attachment; filename="mwra-brewing-values-ppm.csv"'
+            )
+        },
+        media_type="text/csv",
+    )
+
+
+@app.get("/api/exports/raw-values.csv")
+async def raw_values_csv(request: Request):
+    return Response(
+        content=await service(request).raw_values_csv(),
+        headers={
+            "Content-Disposition": (
+                'attachment; filename="mwra-raw-water-values.csv"'
+            )
+        },
+        media_type="text/csv",
+    )
+
+
 @app.get("/api/reports/{year}/{month}")
 async def report_profile(request: Request, year: int, month: int):
     profile, _ = await service(request).profile(year, month)
