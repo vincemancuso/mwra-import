@@ -12,6 +12,7 @@ let historyData = null;
 let currentUnitMode = "brewing";
 let otherMetricsExpanded = false;
 const expandedHistoryRows = new Set();
+const historyIntervals = {};
 
 const chartColors = [
   "#a7193f",
@@ -23,6 +24,27 @@ const chartColors = [
   "#6f5aa7",
 ];
 const chartShapes = ["circle", "square", "diamond", "triangle", "pentagon", "hexagon", "cross"];
+const historyIntervalOptions = [
+  { key: "3m", label: "3 months", months: 3, fillMissing: true },
+  { key: "6m", label: "6 months", months: 6, fillMissing: true },
+  { key: "ytd", label: "Year to date", fillMissing: false },
+  { key: "1y", label: "1 year", months: 12, fillMissing: true },
+  { key: "all", label: "All time", fillMissing: false },
+];
+const monthNames = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
 const brewingScales = {
   calcium: { min: 0, max: 200, targetMin: 50, targetMax: 150, note: "Palmer/AHA commonly cite 50–150/200 ppm as a useful brewing calcium range." },
   magnesium: { min: 0, max: 50, targetMin: 10, targetMax: 30, note: "Common brewing guidance puts magnesium around 10–30 ppm, with high levels becoming bitter/astringent." },
@@ -42,10 +64,20 @@ const escapeHtml = (value) => String(value)
   .replaceAll("'", "&#039;");
 const historyPointKey = (point) =>
   `${point.report_year}-${String(point.report_month_number).padStart(2, "0")}`;
+const monthIndex = (year, month) => year * 12 + month - 1;
+const monthFromIndex = (index) => ({
+  year: Math.floor(index / 12),
+  month: (index % 12) + 1,
+});
 
 function currentReportPointKey() {
   if (!currentProfile) return null;
   return `${currentProfile.report.report_year}-${String(currentProfile.report.report_month_number).padStart(2, "0")}`;
+}
+
+function currentReportMonthIndex() {
+  if (!currentProfile) return null;
+  return monthIndex(currentProfile.report.report_year, currentProfile.report.report_month_number);
 }
 
 function showToast(message) {
@@ -287,12 +319,8 @@ function renderProfile(profile, previousProfile = null) {
   currentPreviousProfile = previousProfile;
   const reportKey = `${profile.report.report_year}-${String(profile.report.report_month_number || "").padStart(2, "0")}`;
   reportSelect.value = reportKey;
-  document.querySelector("#profile-name").textContent = profile.name;
   document.querySelector("#report-meta").textContent =
-    `${profile.report.report_month} ${profile.report.report_year} report${reportKey === latestReportKey ? " · Latest available" : ""} · Cached ${new Date(profile.report.fetched_at).toLocaleString()}`;
-  document.querySelector("#unit-mode-note").textContent =
-    currentUnitMode === "raw" ? "Original MWRA units" : "Brewing-ready values";
-
+    `${reportKey === latestReportKey ? "Latest available" : "Historical report"} · Cached ${new Date(profile.report.fetched_at).toLocaleString()}`;
   const mainRows = profile.profile_values
     .map((measurement) => {
       const isExpanded = expandedHistoryRows.has(measurement.key);
@@ -438,6 +466,63 @@ function historyShape(index) {
   return chartShapes[index % chartShapes.length];
 }
 
+function historyIntervalFor(key) {
+  return historyIntervals[key] || "all";
+}
+
+function intervalOptionFor(key) {
+  return historyIntervalOptions.find((option) => option.key === key) || historyIntervalOptions.at(-1);
+}
+
+function timelinePointFromMonth(index, valuePoint = null) {
+  const { year, month } = monthFromIndex(index);
+  return {
+    report_month: monthNames[month - 1],
+    report_month_number: month,
+    report_year: year,
+    month_year: `${monthNames[month - 1]} ${year}`,
+    value: valuePoint?.value ?? null,
+    normalized: valuePoint?.normalized ?? null,
+    hasValue: Boolean(valuePoint),
+  };
+}
+
+function visibleSeriesFor(series) {
+  const anchorIndex = currentReportMonthIndex();
+  if (anchorIndex === null) return { ...series, points: series.points };
+
+  const interval = intervalOptionFor(historyIntervalFor(series.key));
+  const pointsByIndex = new Map(
+    series.points.map((point) => [
+      monthIndex(point.report_year, point.report_month_number),
+      point,
+    ])
+  );
+
+  if (interval.months) {
+    const start = anchorIndex - interval.months + 1;
+    const points = Array.from({ length: interval.months }, (_, offset) => {
+      const index = start + offset;
+      return timelinePointFromMonth(index, pointsByIndex.get(index));
+    });
+    return { ...series, points };
+  }
+
+  const currentYear = monthFromIndex(anchorIndex).year;
+  const points = series.points.filter((point) => {
+    const index = monthIndex(point.report_year, point.report_month_number);
+    if (interval.key === "ytd") {
+      return point.report_year === currentYear && index <= anchorIndex;
+    }
+    return index <= anchorIndex;
+  }).map((point) => ({ ...point, hasValue: true }));
+  return { ...series, points };
+}
+
+function valuedPoints(points) {
+  return points.filter((point) => point.hasValue !== false && point.value !== null);
+}
+
 function chartTooltip(x, y, lines, className = "") {
   const width = 184;
   const height = 34 + Math.max(0, lines.length - 1) * 16;
@@ -531,10 +616,29 @@ function chartPath(series, scale, width, height, padding) {
     points: series.points.map((point, index) => ({
       ...point,
       x: xFor(index),
-      y: yFor(point.value),
+      y: point.value === null || point.hasValue === false ? null : yFor(point.value),
     })),
     yFor,
   };
+}
+
+function chartLinePaths(points) {
+  const paths = [];
+  let active = [];
+  for (const point of points) {
+    if (point.y === null) {
+      if (active.length) paths.push(active);
+      active = [];
+      continue;
+    }
+    active.push(point);
+  }
+  if (active.length) paths.push(active);
+  return paths.map((segment) =>
+    segment
+      .map((point, pointIndex) => `${pointIndex === 0 ? "M" : "L"} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`)
+      .join(" ")
+  );
 }
 
 function expandedChart(series, index) {
@@ -545,9 +649,6 @@ function expandedChart(series, index) {
   const { points, yFor } = chartPath(series, scale, width, height, padding);
   const selectedKey = currentReportPointKey();
   const selectedPoint = points.find((point) => historyPointKey(point) === selectedKey);
-  const path = points
-    .map((point, pointIndex) => `${pointIndex === 0 ? "M" : "L"} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`)
-    .join(" ");
   const xLabelEvery = Math.max(1, Math.ceil(points.length / 6));
   const valueTicks = [scale.max, (scale.max + scale.min) / 2, scale.min];
   const gridLines = valueTicks
@@ -565,10 +666,11 @@ function expandedChart(series, index) {
   const selectedPointMarker = selectedPoint
     ? `
       <g class="chart-selected-point" style="--symbol-color: ${historyColor(index)}">
-        ${pointSymbolPath(historyShape(index), selectedPoint.x, selectedPoint.y, 8)}
+        ${selectedPoint.y === null ? "" : pointSymbolPath(historyShape(index), selectedPoint.x, selectedPoint.y, 8)}
       </g>`
     : "";
   const pointMarks = points
+    .filter((point) => point.y !== null)
     .map((point) => `
       <g class="chart-point-wrap" tabindex="0" role="img"
         aria-label="${escapeHtml(`${series.label}, ${point.month_year}: ${formatChartValue(point.value, series.unit)}`)}">
@@ -577,6 +679,9 @@ function expandedChart(series, index) {
         </g>
         ${chartTooltip(point.x, point.y, pointTooltipLines(series, point), "point-tooltip")}
       </g>`)
+    .join("");
+  const linePaths = chartLinePaths(points)
+    .map((path) => `<path class="chart-line" d="${path}" stroke="${historyColor(index)}"></path>`)
     .join("");
   const xLabels = points
     .map((point, pointIndex) => {
@@ -597,7 +702,7 @@ function expandedChart(series, index) {
         <line class="chart-axis" x1="${padding.left}" y1="${height - padding.bottom}" x2="${width - padding.right}" y2="${height - padding.bottom}"></line>
         <line class="chart-axis" x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${height - padding.bottom}"></line>
         ${xLabels}
-        <path class="chart-line" d="${path}" stroke="${historyColor(index)}"></path>
+        ${linePaths}
         ${pointMarks}
         ${selectedPointMarker}
       </svg>
@@ -613,25 +718,46 @@ function historyContext(measurement, historyMatch) {
   }
 
   const { series, index } = historyMatch;
+  const visibleSeries = visibleSeriesFor(series);
+  const availablePoints = valuedPoints(visibleSeries.points);
   const scale = fixedScaleFor(series);
   const targetText = scale.targetMin !== null && scale.targetMax !== null
     ? `${formatSeriesValue(series, scale.targetMin)}–${formatSeriesValue(series, scale.targetMax)}`
     : "Reference band unavailable";
+  const intervalKey = historyIntervalFor(series.key);
+  const intervalControls = historyIntervalOptions
+    .map((option) => `
+      <button class="history-interval-button${option.key === intervalKey ? " active" : ""}" type="button"
+        data-history-interval="${escapeHtml(option.key)}"
+        data-history-key="${escapeHtml(series.key)}"
+        aria-pressed="${option.key === intervalKey ? "true" : "false"}">
+        ${escapeHtml(option.label)}
+      </button>`)
+    .join("");
+  const visibleRangeText = availablePoints.length
+    ? `${formatSeriesValue(series, Math.min(...availablePoints.map((point) => point.value)))} → ${formatSeriesValue(series, Math.max(...availablePoints.map((point) => point.value)))}`
+    : "No values in interval";
+  const chartMarkup = visibleSeries.points.length
+    ? expandedChart(visibleSeries, index)
+    : `<div class="history-inline-empty">No ${escapeHtml(series.label)} values are available in this interval.</div>`;
   return `
       <div class="history-inline">
         <div class="history-inline-heading">
           <span class="history-card-symbol">${historyLegendSymbol(index)}</span>
           <div>
             <strong>${escapeHtml(series.label)} historical context</strong>
-            <p>Fixed brewing-reference scale, not a data-fitted axis. The vertical marker shows the report month currently selected above.</p>
+            <p>${escapeHtml(series.description)}</p>
           </div>
         </div>
+        <div class="history-interval-toggle" role="group" aria-label="${escapeHtml(`${series.label} chart interval`)}">
+          ${intervalControls}
+        </div>
         <div class="history-summary">
-          <span><b>Historical MWRA range</b>${formatSeriesValue(series, series.min_value)} → ${formatSeriesValue(series, series.max_value)}</span>
+          <span><b>Visible MWRA range</b>${visibleRangeText}</span>
           <span><b>Chart scale</b>${formatSeriesValue(series, scale.min)} → ${formatSeriesValue(series, scale.max)}</span>
           <span class="reference-summary"><b>Brewing reference</b>${escapeHtml(targetText)}</span>
         </div>
-        ${expandedChart(series, index)}
+        ${chartMarkup}
         <p class="history-note">${escapeHtml(scale.note)}</p>
       </div>`;
 }
@@ -725,6 +851,13 @@ document.querySelector("#profile-table").addEventListener("click", (event) => {
   const otherMetricsToggle = event.target.closest("[data-other-metrics-toggle]");
   if (otherMetricsToggle) {
     otherMetricsExpanded = !otherMetricsExpanded;
+    if (currentProfile) renderProfile(currentProfile, currentPreviousProfile);
+    return;
+  }
+
+  const intervalButton = event.target.closest("[data-history-interval]");
+  if (intervalButton) {
+    historyIntervals[intervalButton.dataset.historyKey] = intervalButton.dataset.historyInterval;
     if (currentProfile) renderProfile(currentProfile, currentPreviousProfile);
     return;
   }

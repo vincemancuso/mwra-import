@@ -9,6 +9,7 @@ DEFAULT_COLUMN = (
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = PROJECT_ROOT / "app-config.toml"
 REPORTS_DIR = PROJECT_ROOT / "data" / "reports"
+RAW_VALUES_CSV = PROJECT_ROOT / "data" / "mwra-treated-water-values.csv"
 TEMPLATES_DIR = PROJECT_ROOT / "templates"
 STATIC_DIR = PROJECT_ROOT / "static"
 

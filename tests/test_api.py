@@ -165,7 +165,6 @@ def test_ui_and_api_endpoints():
     assert "MWRA Homebrewing Water Profile" in page.text
     assert "Boston Wort Processors Present:" in page.text
     assert 'id="report-select"' in page.text
-    assert "Other metrics" in page.text
     assert "MWRA units" in page.text
     assert "About the Brewfather JSON export" in page.text
     assert "About the BeerXML export" in page.text

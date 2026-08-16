@@ -47,16 +47,28 @@ def test_profile_table_has_unit_toggle_and_inline_other_metrics():
     assert "currentUnitMode" in script
     assert "displayMeasurement" in script
     assert "conversionFor" in script
-    assert "Original MWRA units" in script
+    assert "Brewing-ready values converted for water calculators" in template
+    assert "Original MWRA report values and units before brewing conversions" in template
+    assert "unit-tip-content" in template
+    assert "aria-describedby=\"brewing-units-tip\"" in template
+    assert "aria-describedby=\"mwra-units-tip\"" in template
     assert "data-other-metrics-toggle" in script
     assert "otherMetricsExpanded" in script
     assert "other-metric-row" in script
     assert "Brewing units" in template
     assert "MWRA units" in template
-    assert "Other metrics" in template
+    assert "Other metrics" in script
+    assert "export-menu" in template
+    assert "Show export download options" in template
+    assert "brewfather-download" in template
+    assert "beerxml-download" in template
     assert "conversion-table" not in template
     assert "other-values" not in template
     assert ".unit-toggle" in styles
+    assert ".unit-tip-content" in styles
+    assert ".unit-toggle-help:focus-within" in styles
+    assert ".table-toolbar" in styles
+    assert ".export-menu-panel" in styles
     assert ".other-metrics-toggle" in styles
 
 
@@ -82,7 +94,7 @@ def test_history_chart_ui_is_present():
     assert "26% change in hydrogen ion activity" in script
     assert "data-history-toggle" in script
     assert "expandedHistoryRows" in script
-    assert "Current MWRA Water Profile" in template
+    assert "Treated MWRA Water Profile" in template
     assert "Brewing range" in template
     assert ".history-toggle-button" in styles
     assert ".history-inline" in styles
@@ -98,3 +110,12 @@ def test_history_chart_ui_is_present():
     assert "historyLegendSymbol" in script
     assert "chartTooltip" in script
     assert ".history-symbol" in styles
+    assert "historyIntervalOptions" in script
+    assert "3 months" in script
+    assert "Year to date" in script
+    assert "All time" in script
+    assert "data-history-interval" in script
+    assert "visibleSeriesFor" in script
+    assert "chartLinePaths" in script
+    assert ".history-interval-toggle" in styles
+    assert ".history-interval-button.active" in styles

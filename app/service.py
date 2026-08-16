@@ -1,4 +1,5 @@
 import asyncio
+import calendar
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -7,6 +8,7 @@ import httpx
 from app.config import (
     DEFAULT_COLUMN,
     HTTP_TIMEOUT_SECONDS,
+    RAW_VALUES_CSV,
     REPORTS_DIR,
     USER_AGENT,
 )
@@ -16,6 +18,7 @@ from app.errors import (
     ReportDiscoveryError,
     ReportDownloadError,
     ReportNotFoundError,
+    WaterProfileError,
 )
 from app.models import (
     HistoryPoint,
@@ -28,8 +31,20 @@ from app.models import (
     WaterProfileResponse,
 )
 from app.parser import parse_report_pdf_details
+from app.report_store import RawValueStore, merge_measurements, month_key
 from app.settings import AppSettings
-from app.water_context import build_profile_measurements
+from app.water_context import build_profile_measurements, measurement_key
+
+
+REQUIRED_RAW_KEYS = {
+    "calcium",
+    "magnesium",
+    "sodium",
+    "chloride",
+    "sulfate",
+    "alkalinity",
+    "ph",
+}
 
 
 class WaterProfileService:
@@ -37,17 +52,20 @@ class WaterProfileService:
         self,
         settings: AppSettings,
         reports_dir: Path = REPORTS_DIR,
+        raw_values_csv: Path = RAW_VALUES_CSV,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self.settings = settings
         self.source_url = str(settings.mwra_reports_page_url)
         self.reports_dir = reports_dir
+        self.store = RawValueStore(raw_values_csv)
         self._client = client
         self._lock = asyncio.Lock()
         self._catalog: ReportCatalog | None = None
         self._profiles: dict[
             tuple[int, int], tuple[WaterProfileResponse, Path]
         ] = {}
+        self._store_errors: dict[str, str] = {}
 
     async def _request(self, url: str) -> httpx.Response:
         if self._client:
@@ -80,6 +98,7 @@ class WaterProfileService:
         async with self._lock:
             if self._catalog is None or force_refresh:
                 self._catalog = await self.discover()
+            await self._ensure_store_current(force_refresh=force_refresh)
             return self._catalog
 
     async def cache_pdf(self, report: ReportLink) -> Path:
@@ -104,6 +123,72 @@ class WaterProfileService:
         destination.write_bytes(response.content)
         return destination
 
+    async def _parse_and_store_report(self, report: ReportLink) -> Path:
+        pdf_path = await self.cache_pdf(report)
+        raw, other_values = await asyncio.to_thread(parse_report_pdf_details, pdf_path)
+        other_by_key = [
+            (measurement_key(measurement.parameter), measurement)
+            for measurement in other_values
+        ]
+        self.store.save_month(
+            report.year,
+            report.month,
+            merge_measurements(raw, other_by_key),
+        )
+        self._profiles.pop((report.year, report.month), None)
+        return pdf_path
+
+    async def _ensure_store_current(self, force_refresh: bool = False) -> None:
+        if self._catalog is None:
+            self._catalog = await self.discover()
+
+        existing_months = set(self.store.month_columns())
+        for report in reversed(self._catalog.reports):
+            report_month = month_key(report.year, report.month)
+            if force_refresh or report_month not in existing_months:
+                try:
+                    await self._parse_and_store_report(report)
+                    existing_months.add(report_month)
+                    self._store_errors.pop(report_month, None)
+                except WaterProfileError as exc:
+                    self._store_errors[report_month] = str(exc)
+
+    def _build_profile_from_store(
+        self, report: ReportLink, pdf_path: Path
+    ) -> WaterProfileResponse:
+        raw_all = self.store.load_month(report.year, report.month)
+        raw = {key: raw_all[key] for key in REQUIRED_RAW_KEYS if key in raw_all}
+        other_values = [
+            measurement
+            for key, measurement in raw_all.items()
+            if key not in REQUIRED_RAW_KEYS
+        ]
+        brewfather, conversions = convert_measurements(raw)
+        profile_values, hidden_values = build_profile_measurements(
+            brewfather,
+            other_values,
+            self.settings.main_profile_fields,
+        )
+        return WaterProfileResponse(
+            name=f"MWRA Metro-Boston Tap Water - {report.month_year}",
+            report=ReportMetadata(
+                report_month=report.report_date.strftime("%B"),
+                report_month_number=report.month,
+                report_year=report.year,
+                report_label=report.label,
+                source_page_url=self.source_url,
+                source_pdf_url=report.url,
+                selected_column=DEFAULT_COLUMN,
+                cached_filename=pdf_path.name,
+                fetched_at=datetime.now(UTC),
+            ),
+            raw_values=raw,
+            profile_values=profile_values,
+            other_values=hidden_values,
+            conversions=conversions,
+            brewfather_values=brewfather,
+        )
+
     async def _build_profile(
         self, report: ReportLink, force_refresh: bool = False
     ) -> tuple[WaterProfileResponse, Path]:
@@ -111,36 +196,11 @@ class WaterProfileService:
         if key in self._profiles and not force_refresh:
             return self._profiles[key]
 
-        pdf_path = await self.cache_pdf(report)
-        raw, other_values = await asyncio.to_thread(parse_report_pdf_details, pdf_path)
-        brewfather, conversions = convert_measurements(raw)
-        profile_values, hidden_values = build_profile_measurements(
-            brewfather,
-            other_values,
-            self.settings.main_profile_fields,
-        )
-        result = (
-            WaterProfileResponse(
-                name=f"MWRA Metro-Boston Tap Water - {report.month_year}",
-                report=ReportMetadata(
-                    report_month=report.report_date.strftime("%B"),
-                    report_month_number=report.month,
-                    report_year=report.year,
-                    report_label=report.label,
-                    source_page_url=self.source_url,
-                    source_pdf_url=report.url,
-                    selected_column=DEFAULT_COLUMN,
-                    cached_filename=pdf_path.name,
-                    fetched_at=datetime.now(UTC),
-                ),
-                raw_values=raw,
-                profile_values=profile_values,
-                other_values=hidden_values,
-                conversions=conversions,
-                brewfather_values=brewfather,
-            ),
-            pdf_path,
-        )
+        if force_refresh or not self.store.has_month(report.year, report.month):
+            pdf_path = await self._parse_and_store_report(report)
+        else:
+            pdf_path = self.reports_dir / report.cache_filename
+        result = (self._build_profile_from_store(report, pdf_path), pdf_path)
         self._profiles[key] = result
         return result
 
@@ -150,6 +210,7 @@ class WaterProfileService:
         async with self._lock:
             if self._catalog is None:
                 self._catalog = await self.discover()
+            await self._ensure_store_current(force_refresh=force_refresh)
             report = next(
                 (
                     candidate
@@ -162,7 +223,7 @@ class WaterProfileService:
                 raise ReportNotFoundError(
                     f"No linked MWRA monthly report was found for {year:04d}-{month:02d}."
                 )
-            return await self._build_profile(report, force_refresh)
+            return await self._build_profile(report)
 
     async def latest(
         self, force_refresh: bool = False
@@ -170,25 +231,53 @@ class WaterProfileService:
         async with self._lock:
             if self._catalog is None or force_refresh:
                 self._catalog = await self.discover()
-            return await self._build_profile(self._catalog.latest, force_refresh)
+            await self._ensure_store_current(force_refresh=force_refresh)
+            return await self._build_profile(self._catalog.latest)
 
     async def history(self) -> WaterProfileHistoryResponse:
         async with self._lock:
             if self._catalog is None:
                 self._catalog = await self.discover()
+            await self._ensure_store_current()
 
-            profiles: list[WaterProfileResponse] = []
+            profiles: list[tuple[int, int, list]] = []
             skipped_reports: list[SkippedHistoryReport] = []
-            for report in reversed(self._catalog.reports):
+            report_by_month = {
+                month_key(report.year, report.month): report
+                for report in self._catalog.reports
+            }
+            for stored_month in self.store.sorted_month_columns():
+                year, month = (int(part) for part in stored_month.split("-"))
                 try:
-                    profile, _ = await self._build_profile(report)
-                    profiles.append(profile)
+                    raw_all = self.store.load_month(year, month)
+                    raw = {
+                        key: raw_all[key]
+                        for key in REQUIRED_RAW_KEYS
+                        if key in raw_all
+                    }
+                    other_values = [
+                        measurement
+                        for key, measurement in raw_all.items()
+                        if key not in REQUIRED_RAW_KEYS
+                    ]
+                    brewfather, _ = convert_measurements(raw)
+                    profile_values, _ = build_profile_measurements(
+                        brewfather,
+                        other_values,
+                        self.settings.main_profile_fields,
+                    )
+                    profiles.append((year, month, profile_values))
                 except Exception as exc:
+                    report = report_by_month.get(stored_month)
                     skipped_reports.append(
                         SkippedHistoryReport(
-                            month=report.month,
-                            year=report.year,
-                            month_year=report.month_year,
+                            month=month,
+                            year=year,
+                            month_year=(
+                                report.month_year
+                                if report
+                                else f"{calendar.month_name[month]} {year}"
+                            ),
                             error=str(exc),
                         )
                     )
@@ -199,34 +288,35 @@ class WaterProfileService:
                     next(
                         (
                             measurement
-                            for measurement in profile.profile_values
+                            for measurement in profile_values
                             if measurement.key == field_key
                         ),
                         None,
                     )
-                    for profile in profiles
+                    for _, _, profile_values in profiles
                 ]
                 paired = [
-                    (profile, measurement)
-                    for profile, measurement in zip(profiles, measurements, strict=True)
+                    (year, month, measurement)
+                    for (year, month, _), measurement in zip(
+                        profiles, measurements, strict=True
+                    )
                     if measurement is not None
                 ]
                 if not paired:
                     continue
 
-                values = [measurement.value for _, measurement in paired]
+                values = [measurement.value for _, _, measurement in paired]
                 min_value = min(values)
                 max_value = max(values)
                 spread = max_value - min_value
-                representative = paired[-1][1]
+                representative = paired[-1][2]
                 points = [
                     HistoryPoint(
-                        report_month=profile.report.report_month,
-                        report_month_number=profile.report.report_month_number,
-                        report_year=profile.report.report_year,
+                        report_month=calendar.month_name[month],
+                        report_month_number=month,
+                        report_year=year,
                         month_year=(
-                            f"{profile.report.report_month} "
-                            f"{profile.report.report_year}"
+                            f"{calendar.month_name[month]} {year}"
                         ),
                         value=measurement.value,
                         normalized=(
@@ -235,7 +325,7 @@ class WaterProfileService:
                             else (measurement.value - min_value) / spread
                         ),
                     )
-                    for profile, measurement in paired
+                    for year, month, measurement in paired
                 ]
                 series.append(
                     HistorySeries(
@@ -252,10 +342,9 @@ class WaterProfileService:
             return WaterProfileHistoryResponse(
                 source_page_url=self.source_url,
                 normalized_scale=(
-                    "The browser charts each selected field as percent change "
-                    "from that field's first available linked report and "
-                    "recalculates the visible scale when fields are selected "
-                    "or hidden."
+                    "The browser charts each field on a fixed brewing-reference "
+                    "scale and lets users switch between rolling, year-to-date, "
+                    "and all-time intervals."
                 ),
                 series=series,
                 skipped_reports=skipped_reports,

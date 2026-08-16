@@ -46,6 +46,8 @@ upcoming events, educational resources, and homebrewing activities.
 - Lists every monthly report currently linked on that page and lets you switch
   between them, defaulting to the newest one.
 - Downloads and caches the source PDF in `data/reports/`.
+- Stores parsed raw treated-water measurements in a local CSV cache so normal
+  page loads do not repeatedly download or parse the same MWRA PDFs.
 - Extracts the `Carroll Water TP Fin. Water Tap (Treated)` values.
 - Converts MWRA units into standard brewing-water values in ppm.
 - Displays calcium, magnesium, sodium, chloride, sulfate, bicarbonate, and pH.
@@ -83,6 +85,12 @@ chart, historical MWRA range, fixed chart scale, and a matching green swatch for
 the chart's reference band. These bands are broad guidance ranges, not recipe
 targets. Exact targets still depend on beer style, grist, sparge process, and
 measured mash pH.
+
+Each expanded chart can be switched between `3 months`, `6 months`, `Year to
+date`, `1 year`, and `All time`. The rolling `3 months`, `6 months`, and `1
+year` views reserve space for every month in the selected interval and leave
+gaps where the local CSV has no value. `Year to date` and `All time` show only
+months with available local data.
 
 pH is already a logarithmic measurement of hydrogen ion activity. The pH chart
 is therefore plotted evenly in pH units and labels pH values explicitly rather
@@ -123,7 +131,7 @@ Wachusett System / Metro-Boston / Carroll Water TP Finished Water Tap / Treated
 ## Requirements
 
 - Python 3.12 or newer
-- Internet access when fetching a report for the first time
+- Internet access on first run and whenever MWRA posts a newly linked report
 - A modern web browser
 
 No database, JavaScript build system, brewing-software account, credentials,
@@ -289,6 +297,11 @@ uvicorn app.main:app --reload
 
 Open <http://127.0.0.1:8000>.
 
+The first run may take longer than later page loads because the app builds its
+local cache from the monthly reports currently linked on the MWRA page. After
+that, it reads previously extracted raw values from `data/mwra-treated-water-values.csv`
+and only downloads/parses newly discovered report months.
+
 Stop the server with `Ctrl+C`. Leave the virtual environment with:
 
 ```bash
@@ -327,6 +340,9 @@ uvicorn app.main:app --reload
 
 Open <http://127.0.0.1:8000>.
 
+The first run may take longer than later page loads while the local CSV and PDF
+cache are created.
+
 ## Development and tests
 
 Install the development dependencies:
@@ -350,6 +366,7 @@ pytest
 The suite covers:
 
 - report-link discovery and latest-month selection;
+- CSV-backed raw-value caching;
 - independent unit conversion calculations;
 - extraction from a synthetic MWRA-style fixture PDF;
 - the HTML page and local API/PDF endpoints.
@@ -391,25 +408,90 @@ app/
   main.py         FastAPI routes
   models.py       Pydantic response models
   parser.py       PDF table and text extraction
+  report_store.py CSV-backed raw-value storage
   settings.py     Root TOML configuration loading and validation
-  service.py      Download, cache, parse, and response workflow
+  service.py      Discovery, cache refresh, and response workflow
   water_context.py Measurement display partitioning and tooltip guidance
 app-config.toml    Administrator-editable source URL and main field list
 static/            Plain CSS and JavaScript
 templates/         Jinja2 HTML template
 tests/             Unit, parser, discovery, and endpoint tests
 data/reports/      Local PDF cache; downloaded PDFs are ignored by Git
+data/mwra-treated-water-values.csv
+                   Local raw-value CSV cache; ignored by Git
+clear_local_data.py
+                   Manual maintenance script to delete local cached data
+refresh_local_data.py
+                   Manual maintenance script to delete and rebuild local data
 ```
 
 ## How report caching works
 
-On the first request for a month, the app downloads that linked MWRA report
-into `data/reports/`. Later requests in the same running process reuse the
-parsed profile, and later app starts reuse a valid cached PDF with the same
-report month.
+On startup/page load, the app checks the configured MWRA monthly-results page
+for linked report PDFs. It compares those report months with the local CSV at
+`data/mwra-treated-water-values.csv`.
 
-To force a fresh download manually, stop the app and delete the relevant PDF
-from `data/reports/`. The next request will download it again.
+- If a month already exists in the CSV, the app uses those stored raw MWRA
+  values and converts them into brewing units in memory.
+- If MWRA has linked a month that is not in the CSV, the app downloads that PDF
+  into `data/reports/`, extracts the treated-water measurements, and adds a new
+  month column to the CSV.
+- On a fresh clone, neither the CSV nor cached PDFs are included. The first run
+  creates both from the public MWRA reports page.
+
+The CSV format is intentionally simple and inspectable. It uses one row per
+raw measurement and one column per report month:
+
+```csv
+key,parameter,unit,source_label,2026-04,2026-05
+calcium,Calcium,UG/L,Metro-Boston treated/finished water,4370,4320
+ph,pH,standard units,Metro-Boston treated/finished water,9.7,9.6
+```
+
+The values in this file remain in their original MWRA units. The conversion to
+ppm, bicarbonate, and display fields happens inside the app so configuration
+changes do not require editing cached values.
+
+To force a full local rebuild manually, stop the app and delete
+`data/mwra-treated-water-values.csv` plus any PDFs you want refreshed from
+`data/reports/`. The next run will recreate the cache from MWRA.
+
+`data/mwra-treated-water-values.csv` and downloaded PDFs are ignored by Git so
+the repository stays lightweight and each installation maintains its own local
+cache.
+
+## Manual cache maintenance scripts
+
+Two standalone Python scripts are available in the project root for local
+maintenance. They are not web endpoints and are not called by the FastAPI app.
+
+Both scripts print a warning before deleting anything. When possible, they also
+check the current MWRA report page and list any CSV months that are present
+locally but are no longer linked on the MWRA website. If you delete those
+months, the values may not be recoverable from MWRA later.
+
+To remove all local cached MWRA data:
+
+```bash
+python clear_local_data.py
+```
+
+This clear-only script uses only the Python standard library, so it can run
+even before the app dependencies are installed.
+
+To remove all local cached MWRA data and immediately rebuild it from the
+currently linked MWRA reports:
+
+```bash
+python refresh_local_data.py
+```
+
+The refresh script needs the app dependencies because it downloads and parses
+PDFs. If it cannot import them, it exits before deleting anything and tells you
+to activate the virtual environment and run `python -m pip install -e .`.
+
+Each script requires typing an exact confirmation phrase before it deletes the
+CSV or cached PDFs.
 
 ## Known limitations
 

@@ -5,4 +5,5 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 data/reports/*.pdf
+data/*.csv
 !data/reports/.gitkeep
