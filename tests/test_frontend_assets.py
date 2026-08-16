@@ -38,6 +38,28 @@ def test_table_values_can_be_copied_individually():
     assert "Brewer" not in template
 
 
+def test_profile_table_has_unit_toggle_and_inline_other_metrics():
+    script = (PROJECT_ROOT / "static" / "app.js").read_text()
+    styles = (PROJECT_ROOT / "static" / "styles.css").read_text()
+    template = (PROJECT_ROOT / "templates" / "index.html").read_text()
+
+    assert "data-unit-mode" in script
+    assert "currentUnitMode" in script
+    assert "displayMeasurement" in script
+    assert "conversionFor" in script
+    assert "Original MWRA units" in script
+    assert "data-other-metrics-toggle" in script
+    assert "otherMetricsExpanded" in script
+    assert "other-metric-row" in script
+    assert "Brewing units" in template
+    assert "MWRA units" in template
+    assert "Other metrics" in template
+    assert "conversion-table" not in template
+    assert "other-values" not in template
+    assert ".unit-toggle" in styles
+    assert ".other-metrics-toggle" in styles
+
+
 def test_history_chart_ui_is_present():
     script = (PROJECT_ROOT / "static" / "app.js").read_text()
     styles = (PROJECT_ROOT / "static" / "styles.css").read_text()
@@ -55,6 +77,9 @@ def test_history_chart_ui_is_present():
     assert "chart-selected-line" in script
     assert ".chart-selected-line" in styles
     assert ".chart-selected-point" in styles
+    assert "formatSeriesValue" in script
+    assert "pH units are logarithmic" in script
+    assert "26% change in hydrogen ion activity" in script
     assert "data-history-toggle" in script
     assert "expandedHistoryRows" in script
     assert "Current MWRA Water Profile" in template

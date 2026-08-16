@@ -9,6 +9,8 @@ let latestReportKey = null;
 let reportCatalog = [];
 let profileRequestId = 0;
 let historyData = null;
+let currentUnitMode = "brewing";
+let otherMetricsExpanded = false;
 const expandedHistoryRows = new Set();
 
 const chartColors = [
@@ -28,11 +30,10 @@ const brewingScales = {
   chloride: { min: 0, max: 250, targetMin: 50, targetMax: 150, note: "Chloride often supports fullness and malt roundness; very high levels can become excessive." },
   sulfate: { min: 0, max: 400, targetMin: 50, targetMax: 250, note: "Sulfate emphasizes dryness and hop bitterness; very high levels can seem harsh." },
   bicarbonate: { min: 0, max: 250, targetMin: 0, targetMax: 120, note: "Bicarbonate/alkalinity is grist-dependent; lower values generally suit pale beers, higher values can suit darker acidic grists." },
-  ph: { min: 5, max: 10.5, targetMin: 6.5, targetMax: 8.5, note: "Source-water pH is less important than alkalinity and mash pH; the band is a drinking-water-style reference, not a mash target." },
+  ph: { min: 5, max: 10.5, targetMin: 6.5, targetMax: 8.5, note: "pH is already a logarithmic measure of hydrogen ion activity, so this chart is plotted evenly in pH units. A 0.1 pH change represents about a 26% change in hydrogen ion activity, but source-water pH is still less predictive for brewing than alkalinity and measured mash pH." },
 };
 
 const formatValue = (value) => Number(value).toFixed(2).replace(/\.?0+$/, "");
-const titleCase = (value) => value.charAt(0).toUpperCase() + value.slice(1);
 const escapeHtml = (value) => String(value)
   .replaceAll("&", "&amp;")
   .replaceAll("<", "&lt;")
@@ -57,9 +58,43 @@ function copyText(profile) {
   return [
     `Name: ${profile.name}`,
     ...profile.profile_values.map((measurement) =>
-      `${measurement.label}: ${formatValue(measurement.value)}${measurement.unit ? ` ${measurement.unit}` : ""}`
+      `${measurement.label}: ${formatDisplayMeasurement(measurement, true)}`
     ),
   ].join("\n");
+}
+
+function normalizedFieldKey(key) {
+  return key.toLowerCase();
+}
+
+function conversionFor(measurement, profile = currentProfile) {
+  if (!profile) return null;
+  return (profile.conversions || []).find(
+    (conversion) => normalizedFieldKey(conversion.field) === measurement.key
+  ) || null;
+}
+
+function displayMeasurement(measurement, isBrewingMetric = true, profile = currentProfile) {
+  if (currentUnitMode === "raw" && isBrewingMetric) {
+    const conversion = conversionFor(measurement, profile);
+    if (conversion) {
+      return {
+        value: conversion.source_value,
+        unit: conversion.source_unit,
+        sourceLabel: conversion.source_parameter,
+      };
+    }
+  }
+  return {
+    value: measurement.value,
+    unit: measurement.unit,
+    sourceLabel: measurement.label,
+  };
+}
+
+function formatDisplayMeasurement(measurement, isBrewingMetric = true, profile = currentProfile) {
+  const display = displayMeasurement(measurement, isBrewingMetric, profile);
+  return `${formatValue(display.value)}${display.unit ? ` ${display.unit}` : ""}`;
 }
 
 function measurementHelp(measurement, idPrefix) {
@@ -82,10 +117,11 @@ function comparisonValue(profile, key) {
     .find((measurement) => measurement.key === key) || null;
 }
 
-function trendIndicator(measurement, previousProfile) {
+function trendIndicator(measurement, previousProfile, isBrewingMetric = true) {
   const previous = comparisonValue(previousProfile, measurement.key);
   const tooltipId = `trend-${measurement.key.replaceAll("_", "-")}-tip`;
-  const currentValue = Number(formatValue(measurement.value));
+  const currentDisplay = displayMeasurement(measurement, isBrewingMetric);
+  const currentValue = Number(formatValue(currentDisplay.value));
 
   let symbol = "—";
   let state = "steady";
@@ -105,12 +141,13 @@ function trendIndicator(measurement, previousProfile) {
     previousMonth = `${previousProfile.report.report_month} ${previousProfile.report.report_year}`;
     changeText = "Measurement not reported";
   } else {
-    const previousValue = Number(formatValue(previous.value));
+    const previousDisplay = displayMeasurement(previous, isBrewingMetric, previousProfile);
+    const previousValue = Number(formatValue(previousDisplay.value));
     const delta = Number((currentValue - previousValue).toFixed(2));
-    const unit = measurement.unit ? ` ${measurement.unit}` : "";
+    const unit = currentDisplay.unit ? ` ${currentDisplay.unit}` : "";
 
     previousMonth = `${previousProfile.report.report_month} ${previousProfile.report.report_year}`;
-    previousValueText = `${formatValue(previous.value)}${unit}`;
+    previousValueText = `${formatValue(previousDisplay.value)}${unit}`;
     changeText = `${delta > 0 ? "+" : ""}${formatValue(delta)}${unit}`;
     if (delta > 0) {
       symbol = "▲";
@@ -154,6 +191,20 @@ function historySeriesFor(key) {
 }
 
 function rangeIndicator(measurement) {
+  if (currentUnitMode === "raw") {
+    const tooltipId = `range-${measurement.key.replaceAll("_", "-")}-raw-tip`;
+    return `
+      <span class="trend-help">
+        <button class="trend-indicator trend-unavailable" type="button"
+          aria-label="Switch to brewing units to compare ${escapeHtml(measurement.label)} with the brewing reference range"
+          aria-describedby="${tooltipId}">—</button>
+        <span class="trend-tip-content" id="${tooltipId}" role="tooltip">
+          <strong>${escapeHtml(measurement.label)} brewing range</strong>
+          <span>Switch to brewing units to compare this value with the broad brewing reference band.</span>
+        </span>
+      </span>`;
+  }
+
   const historyMatch = historySeriesFor(measurement.key);
   const scale = fixedScaleFor(historyMatch?.series || {
     key: measurement.key,
@@ -239,13 +290,14 @@ function renderProfile(profile, previousProfile = null) {
   document.querySelector("#profile-name").textContent = profile.name;
   document.querySelector("#report-meta").textContent =
     `${profile.report.report_month} ${profile.report.report_year} report${reportKey === latestReportKey ? " · Latest available" : ""} · Cached ${new Date(profile.report.fetched_at).toLocaleString()}`;
-  document.querySelector("#selected-column").textContent =
-    `Selected MWRA column: ${profile.report.selected_column}`;
+  document.querySelector("#unit-mode-note").textContent =
+    currentUnitMode === "raw" ? "Original MWRA units" : "Brewing-ready values";
 
-  document.querySelector("#profile-table").innerHTML = profile.profile_values
+  const mainRows = profile.profile_values
     .map((measurement) => {
       const isExpanded = expandedHistoryRows.has(measurement.key);
       const historyMatch = historySeriesFor(measurement.key);
+      const display = displayMeasurement(measurement, true, profile);
       return `
         <tr class="profile-value-row${isExpanded ? " is-expanded" : ""}">
           <td class="history-toggle-cell">
@@ -262,15 +314,15 @@ function renderProfile(profile, previousProfile = null) {
           </td>
           <td>
             <button class="value-copy-button" type="button"
-              data-copy-value="${escapeHtml(formatValue(measurement.value))}"
+              data-copy-value="${escapeHtml(formatValue(display.value))}"
               data-copy-label="${escapeHtml(measurement.label)}"
               aria-label="${escapeHtml(`Copy ${measurement.label} value`)}">
-              ${formatValue(measurement.value)}
+              ${formatValue(display.value)}
             </button>
           </td>
-          <td>${escapeHtml(measurement.unit) || "—"}</td>
+          <td>${escapeHtml(display.unit) || "—"}</td>
           <td class="trend-cell">${rangeIndicator(measurement)}</td>
-          <td class="trend-cell">${trendIndicator(measurement, previousProfile)}</td>
+          <td class="trend-cell">${trendIndicator(measurement, previousProfile, true)}</td>
         </tr>
         <tr class="history-context-row" id="history-row-${escapeHtml(measurement.key)}"${isExpanded ? "" : " hidden"}>
           <td colspan="6">${historyContext(measurement, historyMatch)}</td>
@@ -278,29 +330,46 @@ function renderProfile(profile, previousProfile = null) {
     })
     .join("");
 
-  document.querySelector("#conversion-table").innerHTML = profile.conversions
-    .map((conversion) => `
-      <tr>
-        <td>${titleCase(conversion.field)}</td>
-        <td>${conversion.source_parameter}</td>
-        <td>${formatValue(conversion.source_value)} ${conversion.source_unit}</td>
-        <td>${conversion.formula}</td>
-        <td>${formatValue(conversion.result)} ${conversion.result_unit}</td>
-      </tr>`)
-    .join("");
-
   const otherValues = profile.other_values || [];
-  document.querySelector("#other-values").innerHTML = otherValues.length
-    ? otherValues
-      .map((measurement) => `
-        <div class="stat-item">
-          <span class="stat-label">
-            ${measurementHelp(measurement, "other")}
-          </span>
-          <span class="stat-value">${formatValue(measurement.value)} ${escapeHtml(measurement.unit)}</span>
-        </div>`)
-      .join("")
-    : '<p class="muted">No additional numeric measurements were found in this report.</p>';
+  const otherSummary = `
+    <tr class="other-metrics-toggle-row">
+      <td colspan="6">
+        <button class="other-metrics-toggle" type="button"
+          data-other-metrics-toggle
+          aria-expanded="${otherMetricsExpanded ? "true" : "false"}">
+          <span aria-hidden="true"></span>
+          Other metrics
+          <small>${otherValues.length} additional numeric measurement${otherValues.length === 1 ? "" : "s"}</small>
+        </button>
+      </td>
+    </tr>`;
+  const otherRows = otherMetricsExpanded
+    ? (
+      otherValues.length
+        ? otherValues.map((measurement) => {
+          const display = displayMeasurement(measurement, false, profile);
+          return `
+            <tr class="profile-value-row other-metric-row">
+              <td></td>
+              <td>${escapeHtml(measurement.label)}</td>
+              <td>
+                <button class="value-copy-button" type="button"
+                  data-copy-value="${escapeHtml(formatValue(display.value))}"
+                  data-copy-label="${escapeHtml(measurement.label)}"
+                  aria-label="${escapeHtml(`Copy ${measurement.label} value`)}">
+                  ${formatValue(display.value)}
+                </button>
+              </td>
+              <td>${escapeHtml(display.unit) || "—"}</td>
+              <td class="trend-cell"><span class="not-applicable">—</span></td>
+              <td class="trend-cell">${trendIndicator(measurement, previousProfile, false)}</td>
+            </tr>`;
+        }).join("")
+        : `<tr class="profile-value-row other-metric-row"><td colspan="6" class="empty-table-message">No additional numeric measurements were found in this report.</td></tr>`
+    )
+    : "";
+
+  document.querySelector("#profile-table").innerHTML = `${mainRows}${otherSummary}${otherRows}`;
 
   const pdfUrl = `/api/reports/${profile.report.report_year}/${profile.report.report_month_number}/pdf`;
   const brewfatherUrl = `/api/reports/${profile.report.report_year}/${profile.report.report_month_number}/brewfather.json`;
@@ -342,6 +411,23 @@ async function fetchJson(url) {
 
 function formatChartValue(value, unit = "") {
   return `${formatValue(value)}${unit ? ` ${unit}` : ""}`;
+}
+
+function formatSeriesValue(series, value) {
+  if (series.key === "ph") return `pH ${formatValue(value)}`;
+  return formatChartValue(value, series.unit);
+}
+
+function pointTooltipLines(series, point) {
+  const lines = [
+    series.label,
+    `${point.month_year}`,
+    `${formatSeriesValue(series, point.value)}`,
+  ];
+  if (series.key === "ph") {
+    lines.push("pH units are logarithmic");
+  }
+  return lines;
 }
 
 function historyColor(index) {
@@ -467,7 +553,7 @@ function expandedChart(series, index) {
   const gridLines = valueTicks
     .map((tick) => `
       <line class="chart-grid" x1="${padding.left}" y1="${yFor(tick)}" x2="${width - padding.right}" y2="${yFor(tick)}"></line>
-      <text class="chart-y-label" x="${padding.left - 10}" y="${yFor(tick) + 4}">${formatChartValue(tick, series.unit)}</text>`)
+      <text class="chart-y-label" x="${padding.left - 10}" y="${yFor(tick) + 4}">${formatSeriesValue(series, tick)}</text>`)
     .join("");
   const targetBand = scale.targetMin !== null && scale.targetMax !== null
     ? `<rect class="chart-target-band" x="${padding.left}" y="${yFor(scale.targetMax)}" width="${width - padding.left - padding.right}" height="${Math.max(2, yFor(scale.targetMin) - yFor(scale.targetMax))}"></rect>`
@@ -489,11 +575,7 @@ function expandedChart(series, index) {
         <g class="chart-point" fill="${historyColor(index)}" stroke="${historyColor(index)}">
           ${pointSymbolPath(historyShape(index), point.x, point.y)}
         </g>
-        ${chartTooltip(point.x, point.y, [
-          series.label,
-          `${point.month_year}`,
-          `${formatChartValue(point.value, series.unit)}`,
-        ], "point-tooltip")}
+        ${chartTooltip(point.x, point.y, pointTooltipLines(series, point), "point-tooltip")}
       </g>`)
     .join("");
   const xLabels = points
@@ -533,7 +615,7 @@ function historyContext(measurement, historyMatch) {
   const { series, index } = historyMatch;
   const scale = fixedScaleFor(series);
   const targetText = scale.targetMin !== null && scale.targetMax !== null
-    ? `${formatChartValue(scale.targetMin, series.unit)}–${formatChartValue(scale.targetMax, series.unit)}`
+    ? `${formatSeriesValue(series, scale.targetMin)}–${formatSeriesValue(series, scale.targetMax)}`
     : "Reference band unavailable";
   return `
       <div class="history-inline">
@@ -545,8 +627,8 @@ function historyContext(measurement, historyMatch) {
           </div>
         </div>
         <div class="history-summary">
-          <span><b>Historical MWRA range</b>${formatChartValue(series.min_value, series.unit)} → ${formatChartValue(series.max_value, series.unit)}</span>
-          <span><b>Chart scale</b>${formatChartValue(scale.min, series.unit)} → ${formatChartValue(scale.max, series.unit)}</span>
+          <span><b>Historical MWRA range</b>${formatSeriesValue(series, series.min_value)} → ${formatSeriesValue(series, series.max_value)}</span>
+          <span><b>Chart scale</b>${formatSeriesValue(series, scale.min)} → ${formatSeriesValue(series, scale.max)}</span>
           <span class="reference-summary"><b>Brewing reference</b>${escapeHtml(targetText)}</span>
         </div>
         ${expandedChart(series, index)}
@@ -620,6 +702,16 @@ document.querySelector("#copy-button").addEventListener("click", async () => {
 
 document.querySelector("#retry-button").addEventListener("click", initialize);
 
+document.querySelectorAll("[data-unit-mode]").forEach((button) => {
+  button.addEventListener("click", () => {
+    currentUnitMode = button.dataset.unitMode || "brewing";
+    document.querySelectorAll("[data-unit-mode]").forEach((candidate) => {
+      candidate.classList.toggle("active", candidate.dataset.unitMode === currentUnitMode);
+    });
+    if (currentProfile) renderProfile(currentProfile, currentPreviousProfile);
+  });
+});
+
 document.querySelector("#profile-table").addEventListener("click", (event) => {
   const valueButton = event.target.closest("[data-copy-value]");
   if (valueButton) {
@@ -627,6 +719,13 @@ document.querySelector("#profile-table").addEventListener("click", (event) => {
     writeClipboard(valueButton.dataset.copyValue || "").then((copied) => {
       showToast(copied ? `${label} copied` : "Clipboard access was unavailable");
     });
+    return;
+  }
+
+  const otherMetricsToggle = event.target.closest("[data-other-metrics-toggle]");
+  if (otherMetricsToggle) {
+    otherMetricsExpanded = !otherMetricsExpanded;
+    if (currentProfile) renderProfile(currentProfile, currentPreviousProfile);
     return;
   }
 

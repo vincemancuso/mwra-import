@@ -75,7 +75,7 @@ brewing value uses a fixed, broad brewing-reference scale:
 | Chloride | 0–250 ppm |
 | Sulfate | 0–400 ppm |
 | Bicarbonate | 0–250 ppm |
-| pH | 5.0–10.5 |
+| pH | pH 5.0–10.5 |
 
 The main table shows whether the current value is below, within, or above the
 broad brewing reference band. Expanding a value row shows the full historical
@@ -83,6 +83,10 @@ chart, historical MWRA range, fixed chart scale, and a matching green swatch for
 the chart's reference band. These bands are broad guidance ranges, not recipe
 targets. Exact targets still depend on beer style, grist, sparge process, and
 measured mash pH.
+
+pH is already a logarithmic measurement of hydrogen ion activity. The pH chart
+is therefore plotted evenly in pH units and labels pH values explicitly rather
+than re-transforming them a second time.
 
 ## Optional recipe-software exports
 
@@ -192,12 +196,12 @@ mwra_reports_page_url = "https://www.example.org/new-monthly-report-page"
 
 ### Choosing the main water-profile fields
 
-- `main_profile_fields` controls which values appear in the main water-profile
-  table and their order. All other extracted numeric values move into the
-  collapsible “Other treated-water measurements” section.
+- `main_profile_fields` controls which values appear immediately in the main
+  water-profile table and their order. All other extracted numeric values move
+  into the expandable “Other metrics” rows at the bottom of that same table.
 - Field keys are lowercase and use underscores instead of spaces.
 - Reordering the keys reorders the main table. Removing a key moves that value
-  into the collapsible section; adding a supported key promotes it.
+  into Other metrics; adding a supported key promotes it.
 - Standard calculated field keys are `calcium`, `magnesium`, `sodium`,
   `chloride`, `sulfate`, `bicarbonate`, and `ph`.
 - Additional MWRA fields can also be promoted. Common keys include
