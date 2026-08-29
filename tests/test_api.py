@@ -174,10 +174,15 @@ def test_ui_and_api_endpoints():
         brewfather = client.get("/api/reports/2026/3/brewfather.json")
         beerxml = client.get("/api/reports/2026/3/beerxml.xml")
         missing = client.get("/api/reports/2025/12")
+        invalid_month = client.get("/api/reports/2026/13")
         api = client.get("/api/latest")
         pdf = client.get("/api/latest/pdf")
 
     assert page.status_code == 200
+    assert page.headers["content-security-policy"].startswith("default-src 'self'")
+    assert page.headers["x-content-type-options"] == "nosniff"
+    assert page.headers["x-frame-options"] == "SAMEORIGIN"
+    assert page.headers["referrer-policy"] == "no-referrer"
     assert "MWRA Homebrewing Water Profile" in page.text
     assert "Boston Wort Processors Present:" in page.text
     assert 'id="report-select"' in page.text
@@ -229,6 +234,7 @@ def test_ui_and_api_endpoints():
     assert "<YEASTS" in beerxml.text
     assert "<TYPE>Ale</TYPE>" in beerxml.text
     assert missing.status_code == 404
+    assert invalid_month.status_code == 422
     assert api.status_code == 200
     assert api.json()["brewfather_values"]["pH"] == 9.7
     assert pdf.status_code == 200

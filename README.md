@@ -367,6 +367,7 @@ The suite covers:
 
 - report-link discovery and latest-month selection;
 - CSV-backed raw-value caching;
+- brewing-ready and raw CSV exports;
 - independent unit conversion calculations;
 - extraction from a synthetic MWRA-style fixture PDF;
 - the HTML page and local API/PDF endpoints.
@@ -386,6 +387,8 @@ The browser interface uses these local endpoints:
 | `GET /` | Render the web interface |
 | `GET /api/reports` | List all linked reports and identify the latest one |
 | `GET /api/history` | Return historical chart data for the configured main brewing values |
+| `GET /api/exports/brewing-values.csv` | Download brewing-related values across all stored months in brewing-ready units |
+| `GET /api/exports/raw-values.csv` | Download every stored MWRA measurement across all stored months in original units |
 | `GET /api/reports/{year}/{month}` | Return one selected report profile |
 | `GET /api/reports/{year}/{month}/pdf` | Stream one selected cached report PDF |
 | `GET /api/reports/{year}/{month}/brewfather.json` | Download a Brewfather recipe containing the selected water profile |
@@ -499,7 +502,7 @@ CSV or cached PDFs.
   MWRA layout change may break extraction.
 - The parser uses the rightmost treated/finished-water column as a fallback
   when it cannot identify the preferred column directly.
-- There is no manual PDF upload fallback in this MVP.
+- There is no manual PDF upload fallback yet.
 - The app always selects the newest **linked** monthly report. Unlinked future
   placeholders on the MWRA page are ignored.
 - Values are snapshots from MWRA's monthly report and may not represent water
@@ -510,6 +513,24 @@ CSV or cached PDFs.
 
 When required values cannot be extracted, the app returns a descriptive error
 instead of silently inventing or substituting values.
+
+## Public hosting security notes
+
+The app is intentionally lightweight, but it now includes a few defensive
+defaults for internet-facing deployments:
+
+- browser security headers, including a same-origin content security policy;
+- month/year route validation before selected-report lookup;
+- same-origin filtering for report links discovered from the configured MWRA
+  page;
+- size limits for downloaded report pages and PDFs;
+- CSV export escaping for spreadsheet-formula-looking text.
+
+If you deploy this publicly, place it behind a normal reverse proxy or platform
+edge that provides HTTPS, access logs, request-size limits, and any rate
+limiting you want. Keep `app-config.toml` administrator-controlled; do not
+expose a public UI for changing the MWRA source URL without adding stronger
+allow-listing.
 
 ## Troubleshooting
 

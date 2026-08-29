@@ -652,17 +652,6 @@ function pointSymbolPath(shape, x, y, size = 5.5) {
   return `<path d="${path} Z"></path>`;
 }
 
-function historyLegendSymbol(index) {
-  const color = historyColor(index);
-  const shape = historyShape(index);
-  return `
-    <svg class="history-symbol" viewBox="0 0 24 24" aria-hidden="true">
-      <g style="--symbol-color: ${color}" fill="${color}" stroke="${color}">
-        ${pointSymbolPath(shape, 12, 12, shape === "cross" ? 7.5 : 6.3)}
-      </g>
-    </svg>`;
-}
-
 function fixedScaleFor(series) {
   return brewingScales[series.key] || {
     min: 0,

@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Path, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -29,9 +29,44 @@ app = FastAPI(title=APP_NAME, version="0.1.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
+SECURITY_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'self'; "
+        "script-src 'self'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "connect-src 'self'; "
+        "frame-src 'self'; "
+        "frame-ancestors 'self'; "
+        "object-src 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    ),
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
+}
+
 
 def service(request: Request) -> WaterProfileService:
     return request.app.state.profile_service
+
+
+def csv_download(content: str, filename: str) -> Response:
+    return Response(
+        content=content,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        media_type="text/csv",
+    )
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    for header, value in SECURITY_HEADERS.items():
+        response.headers.setdefault(header, value)
+    return response
 
 
 @app.exception_handler(WaterProfileError)
@@ -45,7 +80,7 @@ async def water_profile_error_handler(
             "message": str(exc),
             "manual_fallback": {
                 "available": False,
-                "message": "Local PDF upload is planned but is not implemented in this MVP.",
+                "message": "Local PDF upload is planned but is not implemented yet.",
             },
         },
     )
@@ -81,38 +116,36 @@ async def history(request: Request):
 
 @app.get("/api/exports/brewing-values.csv")
 async def brewing_values_csv(request: Request):
-    return Response(
-        content=await service(request).brewing_values_csv(),
-        headers={
-            "Content-Disposition": (
-                'attachment; filename="mwra-brewing-values-ppm.csv"'
-            )
-        },
-        media_type="text/csv",
+    return csv_download(
+        await service(request).brewing_values_csv(),
+        "mwra-brewing-values-ppm.csv",
     )
 
 
 @app.get("/api/exports/raw-values.csv")
 async def raw_values_csv(request: Request):
-    return Response(
-        content=await service(request).raw_values_csv(),
-        headers={
-            "Content-Disposition": (
-                'attachment; filename="mwra-raw-water-values.csv"'
-            )
-        },
-        media_type="text/csv",
+    return csv_download(
+        await service(request).raw_values_csv(),
+        "mwra-raw-water-values.csv",
     )
 
 
 @app.get("/api/reports/{year}/{month}")
-async def report_profile(request: Request, year: int, month: int):
+async def report_profile(
+    request: Request,
+    year: int = Path(ge=2000, le=2100),
+    month: int = Path(ge=1, le=12),
+):
     profile, _ = await service(request).profile(year, month)
     return profile
 
 
 @app.get("/api/reports/{year}/{month}/pdf", response_class=FileResponse)
-async def report_pdf(request: Request, year: int, month: int):
+async def report_pdf(
+    request: Request,
+    year: int = Path(ge=2000, le=2100),
+    month: int = Path(ge=1, le=12),
+):
     _, pdf_path = await service(request).profile(year, month)
     if not pdf_path.exists():
         raise HTTPException(status_code=404, detail="The cached report PDF is missing.")
@@ -125,7 +158,11 @@ async def report_pdf(request: Request, year: int, month: int):
 
 
 @app.get("/api/reports/{year}/{month}/brewfather.json")
-async def brewfather_recipe(request: Request, year: int, month: int):
+async def brewfather_recipe(
+    request: Request,
+    year: int = Path(ge=2000, le=2100),
+    month: int = Path(ge=1, le=12),
+):
     profile, _ = await service(request).profile(year, month)
     return JSONResponse(
         content=build_brewfather_recipe(profile),
@@ -139,7 +176,11 @@ async def brewfather_recipe(request: Request, year: int, month: int):
 
 
 @app.get("/api/reports/{year}/{month}/beerxml.xml")
-async def beerxml_recipe(request: Request, year: int, month: int):
+async def beerxml_recipe(
+    request: Request,
+    year: int = Path(ge=2000, le=2100),
+    month: int = Path(ge=1, le=12),
+):
     profile, _ = await service(request).profile(year, month)
     recipe = build_brewfather_recipe(profile)
     return Response(

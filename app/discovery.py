@@ -1,6 +1,6 @@
 import re
 from datetime import datetime
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
 
@@ -60,6 +60,7 @@ def _date_from_anchor(label: str, href: str, title: str) -> tuple[int, int] | No
 def find_report_links(html: str, base_url: str = MWRA_BASE_URL) -> list[ReportLink]:
     soup = BeautifulSoup(html, "html.parser")
     reports: dict[tuple[int, int], ReportLink] = {}
+    base_parts = urlparse(base_url)
 
     for anchor in soup.select("a[href]"):
         href = anchor.get("href", "").strip()
@@ -78,11 +79,18 @@ def find_report_links(html: str, base_url: str = MWRA_BASE_URL) -> list[ReportLi
         if not parsed:
             continue
         month, year = parsed
+        report_url = urljoin(base_url, href)
+        report_parts = urlparse(report_url)
+        if (
+            report_parts.scheme not in {"http", "https"}
+            or report_parts.netloc != base_parts.netloc
+        ):
+            continue
         reports[(year, month)] = ReportLink(
             month=month,
             year=year,
             label=label or datetime(year, month, 1).strftime("%b %Y"),
-            url=urljoin(base_url, href),
+            url=report_url,
         )
 
     return sorted(reports.values(), key=lambda report: report.report_date)

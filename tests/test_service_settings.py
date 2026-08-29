@@ -3,6 +3,7 @@ from pathlib import Path
 import httpx
 import pytest
 
+from app.errors import ReportDiscoveryError
 from app.service import WaterProfileService
 from app.settings import AppSettings
 from app.models import RawMeasurement, ReportCatalog, ReportLink
@@ -159,10 +160,10 @@ async def test_csv_exports_use_cached_store_values(tmp_path: Path):
         {
             **raw_measurements(4370),
             "hardness": RawMeasurement(
-                parameter="Hardness",
+                parameter="=HYPERLINK(\"https://example.test\")",
                 value=14.4,
                 unit="MG/L",
-                source_label="Metro-Boston treated/finished water",
+                source_label="+external source",
             ),
         },
     )
@@ -210,4 +211,27 @@ async def test_csv_exports_use_cached_store_values(tmp_path: Path):
         "key,parameter,unit,source_label,2026-03,2026-04"
     )
     assert "calcium,Calcium,UG/L,Metro-Boston treated/finished water,4000,4370" in raw_csv
-    assert "hardness,Hardness,MG/L,Metro-Boston treated/finished water,,14.4" in raw_csv
+    assert "hardness,\"'=HYPERLINK(\"\"https://example.test\"\")\",MG/L,'+external source,,14.4" in raw_csv
+
+
+@pytest.mark.asyncio
+async def test_oversized_report_page_is_rejected(tmp_path: Path):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            content=b"x",
+            headers={"content-length": str(3 * 1024 * 1024)},
+        )
+
+    settings = AppSettings(
+        mwra_reports_page_url="https://water.example.test/monthly",
+        main_profile_fields=["calcium"],
+    )
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        service = WaterProfileService(
+            settings=settings,
+            reports_dir=tmp_path,
+            client=client,
+        )
+        with pytest.raises(ReportDiscoveryError, match="larger than the allowed"):
+            await service.discover()

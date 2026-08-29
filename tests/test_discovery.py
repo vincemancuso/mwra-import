@@ -25,6 +25,18 @@ def test_unlinked_future_placeholder_is_not_selected():
     assert select_latest_report(html).month == 4
 
 
+def test_cross_origin_report_links_are_ignored():
+    html = (
+        '<a href="https://evil.example/wq-update-052026.pdf">May 2026</a>'
+        '<a href="/media/file/wq-update-042026.pdf">April 2026</a>'
+    )
+
+    reports = find_report_links(html, "https://www.mwra.test/monthly")
+
+    assert [report.month for report in reports] == [4]
+    assert reports[0].url == "https://www.mwra.test/media/file/wq-update-042026.pdf"
+
+
 def test_missing_reports_has_clear_error():
     with pytest.raises(ReportDiscoveryError, match="No linked monthly"):
         select_latest_report("<html><body>No reports yet</body></html>")

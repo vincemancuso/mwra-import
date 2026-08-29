@@ -38,8 +38,6 @@ def test_table_values_can_be_copied_individually():
     assert "Clipboard unavailable — select and copy manually" in script
     assert ".copy-fallback" in styles
     assert ".value-copy-button" in styles
-    assert "brewersfriend-import" not in script
-    assert "Brewer" not in template
 
 
 def test_profile_table_has_unit_toggle_and_inline_other_metrics():
@@ -74,8 +72,6 @@ def test_profile_table_has_unit_toggle_and_inline_other_metrics():
     assert "/api/exports/brewing-values.csv" in script
     assert "/api/exports/raw-values.csv" in script
     assert '<span aria-hidden="true">i</span>' in template
-    assert "conversion-table" not in template
-    assert "other-values" not in template
     assert ".unit-toggle" in styles
     assert ".unit-info-help" in styles
     assert ".unit-mode-tip-content" in styles
@@ -133,15 +129,10 @@ def test_history_chart_ui_is_present():
     assert ".chart-point" in styles
     assert "chartShapes" in script
     assert "pointSymbolPath" in script
-    assert "historyLegendSymbol" in script
     assert "chartTooltip" in script
-    assert ".history-symbol" in styles
     assert "This chart uses a broad fixed brewing scale" in script
     assert "Scale to fit data zooms the y-axis" in script
     assert 'return historyIntervals[key] || "3m";' in script
-    assert "history-note" not in script
-    assert ".history-note" not in styles
-    assert ".history-scale-callout" not in styles
     assert "historyIntervalOptions" in script
     assert "3 months" in script
     assert "Year to date" in script

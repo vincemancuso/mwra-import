@@ -10,11 +10,14 @@ import httpx
 from app.config import (
     DEFAULT_COLUMN,
     HTTP_TIMEOUT_SECONDS,
+    MAX_REPORT_PAGE_BYTES,
+    MAX_REPORT_PDF_BYTES,
     RAW_VALUES_CSV,
     REPORTS_DIR,
     USER_AGENT,
 )
 from app.conversions import convert_measurements
+from app.csv_safety import safe_csv_row
 from app.discovery import find_report_links
 from app.errors import (
     ReportDiscoveryError,
@@ -23,8 +26,12 @@ from app.errors import (
     WaterProfileError,
 )
 from app.models import (
+    BrewfatherValues,
+    Conversion,
     HistoryPoint,
     HistorySeries,
+    ProfileMeasurement,
+    RawMeasurement,
     ReportCatalog,
     ReportLink,
     ReportMetadata,
@@ -79,25 +86,62 @@ class WaterProfileService:
         ] = {}
         self._store_errors: dict[str, str] = {}
 
-    async def _request(self, url: str) -> httpx.Response:
+    async def _request_limited_bytes(self, url: str, max_bytes: int) -> bytes:
         if self._client:
-            return await self._client.get(url, follow_redirects=True)
+            async with self._client.stream(
+                "GET", url, follow_redirects=True
+            ) as response:
+                return await self._read_limited_response(response, max_bytes)
+
         async with httpx.AsyncClient(
             timeout=HTTP_TIMEOUT_SECONDS,
             headers={"User-Agent": USER_AGENT},
             follow_redirects=True,
         ) as client:
-            return await client.get(url)
+            async with client.stream("GET", url) as response:
+                return await self._read_limited_response(response, max_bytes)
+
+    async def _read_limited_response(
+        self, response: httpx.Response, max_bytes: int
+    ) -> bytes:
+        response.raise_for_status()
+        content_length = response.headers.get("content-length")
+        if content_length:
+            try:
+                too_large = int(content_length) > max_bytes
+            except ValueError:
+                too_large = False
+            if too_large:
+                raise ReportDownloadError(
+                    f"The MWRA response was larger than the allowed {max_bytes} bytes."
+                )
+
+        chunks: list[bytes] = []
+        total_size = 0
+        async for chunk in response.aiter_bytes():
+            total_size += len(chunk)
+            if total_size > max_bytes:
+                raise ReportDownloadError(
+                    f"The MWRA response was larger than the allowed {max_bytes} bytes."
+                )
+            chunks.append(chunk)
+        return b"".join(chunks)
 
     async def discover(self) -> ReportCatalog:
         try:
-            response = await self._request(self.source_url)
-            response.raise_for_status()
+            content = await self._request_limited_bytes(
+                self.source_url, MAX_REPORT_PAGE_BYTES
+            )
         except (httpx.HTTPError, OSError) as exc:
             raise ReportDiscoveryError(
                 f"Could not fetch the MWRA monthly reports page: {exc}"
             ) from exc
-        reports = find_report_links(response.text, self.source_url)
+        except ReportDownloadError as exc:
+            raise ReportDiscoveryError(str(exc)) from exc
+        reports = find_report_links(
+            content.decode("utf-8", errors="replace"),
+            self.source_url,
+        )
         if not reports:
             raise ReportDiscoveryError(
                 "No linked monthly MWRA water-quality PDFs were found. "
@@ -121,18 +165,19 @@ class WaterProfileService:
                 return destination
 
         try:
-            response = await self._request(report.url)
-            response.raise_for_status()
+            content = await self._request_limited_bytes(
+                report.url, MAX_REPORT_PDF_BYTES
+            )
         except (httpx.HTTPError, OSError) as exc:
             raise ReportDownloadError(
                 f"Could not download the MWRA report ({report.month_year}): {exc}"
             ) from exc
-        if not response.content.startswith(b"%PDF"):
+        if not content.startswith(b"%PDF"):
             raise ReportDownloadError(
                 "The selected MWRA report link did not return a PDF. "
                 "The MWRA website may have changed."
             )
-        destination.write_bytes(response.content)
+        destination.write_bytes(content)
         return destination
 
     async def _parse_and_store_report(self, report: ReportLink) -> Path:
@@ -165,21 +210,44 @@ class WaterProfileService:
                 except WaterProfileError as exc:
                     self._store_errors[report_month] = str(exc)
 
-    def _build_profile_from_store(
-        self, report: ReportLink, pdf_path: Path
-    ) -> WaterProfileResponse:
-        raw_all = self.store.load_month(report.year, report.month)
-        raw = {key: raw_all[key] for key in REQUIRED_RAW_KEYS if key in raw_all}
-        other_values = [
+    def _required_raw_values(
+        self, raw_all: dict[str, RawMeasurement]
+    ) -> dict[str, RawMeasurement]:
+        return {key: raw_all[key] for key in REQUIRED_RAW_KEYS if key in raw_all}
+
+    def _other_raw_values(
+        self, raw_all: dict[str, RawMeasurement]
+    ) -> list[RawMeasurement]:
+        return [
             measurement
             for key, measurement in raw_all.items()
             if key not in REQUIRED_RAW_KEYS
         ]
-        brewfather, conversions = convert_measurements(raw)
+
+    def _profile_measurements_from_raw(
+        self, raw_all: dict[str, RawMeasurement]
+    ) -> tuple[
+        BrewfatherValues,
+        list[Conversion],
+        list[ProfileMeasurement],
+        list[ProfileMeasurement],
+    ]:
+        brewing_values, conversions = convert_measurements(
+            self._required_raw_values(raw_all)
+        )
         profile_values, hidden_values = build_profile_measurements(
-            brewfather,
-            other_values,
+            brewing_values,
+            self._other_raw_values(raw_all),
             self.settings.main_profile_fields,
+        )
+        return brewing_values, conversions, profile_values, hidden_values
+
+    def _build_profile_from_store(
+        self, report: ReportLink, pdf_path: Path
+    ) -> WaterProfileResponse:
+        raw_all = self.store.load_month(report.year, report.month)
+        brewing_values, conversions, profile_values, hidden_values = (
+            self._profile_measurements_from_raw(raw_all)
         )
         return WaterProfileResponse(
             name=f"MWRA Metro-Boston Tap Water - {report.month_year}",
@@ -194,11 +262,11 @@ class WaterProfileService:
                 cached_filename=pdf_path.name,
                 fetched_at=datetime.now(UTC),
             ),
-            raw_values=raw,
+            raw_values=self._required_raw_values(raw_all),
             profile_values=profile_values,
             other_values=hidden_values,
             conversions=conversions,
-            brewfather_values=brewfather,
+            brewfather_values=brewing_values,
         )
 
     async def _build_profile(
@@ -262,21 +330,8 @@ class WaterProfileService:
                 year, month = (int(part) for part in stored_month.split("-"))
                 try:
                     raw_all = self.store.load_month(year, month)
-                    raw = {
-                        key: raw_all[key]
-                        for key in REQUIRED_RAW_KEYS
-                        if key in raw_all
-                    }
-                    other_values = [
-                        measurement
-                        for key, measurement in raw_all.items()
-                        if key not in REQUIRED_RAW_KEYS
-                    ]
-                    brewfather, _ = convert_measurements(raw)
-                    profile_values, _ = build_profile_measurements(
-                        brewfather,
-                        other_values,
-                        self.settings.main_profile_fields,
+                    _, _, profile_values, _ = self._profile_measurements_from_raw(
+                        raw_all
                     )
                     profiles.append((year, month, profile_values))
                 except Exception as exc:
@@ -379,20 +434,17 @@ class WaterProfileService:
                 year, month = (int(part) for part in stored_month.split("-"))
                 try:
                     raw_all = self.store.load_month(year, month)
-                    raw = {
-                        key: raw_all[key]
-                        for key in REQUIRED_RAW_KEYS
-                        if key in raw_all
-                    }
-                    brewfather, _ = convert_measurements(raw)
+                    brewing_values, _, _, _ = self._profile_measurements_from_raw(
+                        raw_all
+                    )
                     values_by_month[stored_month] = {
-                        "calcium": brewfather.calcium,
-                        "magnesium": brewfather.magnesium,
-                        "sodium": brewfather.sodium,
-                        "chloride": brewfather.chloride,
-                        "sulfate": brewfather.sulfate,
-                        "bicarbonate": brewfather.bicarbonate,
-                        "ph": brewfather.ph,
+                        "calcium": brewing_values.calcium,
+                        "magnesium": brewing_values.magnesium,
+                        "sodium": brewing_values.sodium,
+                        "chloride": brewing_values.chloride,
+                        "sulfate": brewing_values.sulfate,
+                        "bicarbonate": brewing_values.bicarbonate,
+                        "ph": brewing_values.ph,
                     }
                 except Exception:
                     values_by_month[stored_month] = {}
@@ -409,7 +461,7 @@ class WaterProfileService:
                         for stored_month in months
                     }
                 )
-                writer.writerow(row)
+                writer.writerow(safe_csv_row(row))
 
             return output.getvalue()
 
@@ -424,5 +476,7 @@ class WaterProfileService:
             writer = csv.DictWriter(output, fieldnames=header)
             writer.writeheader()
             for row in rows:
-                writer.writerow({field: row.get(field, "") for field in header})
+                writer.writerow(
+                    safe_csv_row({field: row.get(field, "") for field in header})
+                )
             return output.getvalue()
